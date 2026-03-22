@@ -329,6 +329,9 @@ export default function ArchivePage() {
         </div>
         <div className="archive-header-actions">
           <p className="archive-count">{photos.length} assets</p>
+          <Link className="archive-link" to="/people">
+            Open people collage
+          </Link>
           <Link className="archive-link" to="/metadata">
             Open metadata editor
           </Link>

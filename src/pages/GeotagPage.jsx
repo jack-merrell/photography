@@ -139,33 +139,6 @@ function getLandmarkAnnotations(aiDescription) {
   })
 }
 
-function mergeAiDraftsIntoPhotos(photos, drafts) {
-  if (!Array.isArray(drafts) || drafts.length === 0) {
-    return { nextPhotos: photos, draftCount: 0 }
-  }
-
-  const draftByFilename = new Map(
-    drafts
-      .filter((draft) => draft && typeof draft.filename === 'string')
-      .map((draft) => [draft.filename, draft.aiDescription ?? null]),
-  )
-
-  let draftCount = 0
-  const nextPhotos = photos.map((photo) => {
-    if (photo.aiDescription || !draftByFilename.has(photo.filename)) {
-      return photo
-    }
-
-    draftCount += 1
-    return {
-      ...photo,
-      aiDescription: draftByFilename.get(photo.filename),
-    }
-  })
-
-  return { nextPhotos, draftCount }
-}
-
 function createMetadataDraft(photo) {
   return {
     captureTimestamp: formatTimestampForInput(photo.captureTimestamp),
@@ -225,30 +198,6 @@ function getAiTagSections(aiDescription) {
       Array.isArray(values) ? values.filter((value) => typeof value === 'string' && value.trim()) : [],
     ])
     .filter(([, values]) => values.length > 0)
-}
-
-function shouldHydrateAiDescriptionDraft(metadataDraft, savedMetadataDraft) {
-  if (!metadataDraft || !savedMetadataDraft) {
-    return false
-  }
-
-  const currentAiDescription = metadataDraft.aiDescription.trim()
-  const nextAiDescription = savedMetadataDraft.aiDescription.trim()
-
-  if (currentAiDescription || !nextAiDescription) {
-    return false
-  }
-
-  const currentWithoutAi = createSaveFields({
-    ...metadataDraft,
-    aiDescription: '',
-  })
-  const savedWithoutAi = createSaveFields({
-    ...savedMetadataDraft,
-    aiDescription: '',
-  })
-
-  return JSON.stringify(currentWithoutAi) === JSON.stringify(savedWithoutAi)
 }
 
 function collectExistingValues(entries, field) {
@@ -321,13 +270,13 @@ export default function GeotagPage() {
   const [destructiveUnlockValue, setDestructiveUnlockValue] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
   const [saveError, setSaveError] = useState('')
-  const [draftLoadMessage, setDraftLoadMessage] = useState('')
   const lastAltitudeLookupKeyRef = useRef('')
   const lastManualGpsLookupVersionRef = useRef(0)
   const lastAutoSaveSnapshotRef = useRef('')
   const mapRef = useRef(null)
 
   const currentPhoto = photoEntries[currentIndex]
+  const currentPhotoFilenameRef = useRef(currentPhoto.filename)
   const savedMetadataDraft = useMemo(() => createMetadataDraft(currentPhoto), [currentPhoto])
   const cameraOptions = useMemo(() => collectExistingValues(photoEntries, 'camera'), [photoEntries])
   const lensOptions = useMemo(() => collectExistingValues(photoEntries, 'lens'), [photoEntries])
@@ -528,6 +477,7 @@ export default function GeotagPage() {
 
   const handleSave = useCallback(
     async (draftToSave = metadataDraft, saveSource = 'manual') => {
+      const requestFilename = currentPhoto.filename
       const aiDescriptionDraft = parseAiDescriptionDraft(draftToSave.aiDescription)
       if (aiDescriptionDraft.error) {
         setSaveError(aiDescriptionDraft.error)
@@ -547,7 +497,7 @@ export default function GeotagPage() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            filename: currentPhoto.filename,
+            filename: requestFilename,
             fields: createSaveFields(draftToSave),
           }),
         })
@@ -558,19 +508,26 @@ export default function GeotagPage() {
         }
 
         applyUpdatedPhoto(responseBody.photo)
-        setMetadataDraft(createMetadataDraft(responseBody.photo))
-        setSaveMessage('Updated file metadata and photoIndex.json.')
-        if (saveSource === 'auto' || saveSource === 'manual') {
-          lastAutoSaveSnapshotRef.current = ''
+
+        if (currentPhotoFilenameRef.current === responseBody.photo.filename) {
+          setMetadataDraft(createMetadataDraft(responseBody.photo))
+          setSaveMessage('Updated file metadata and photoIndex.json.')
+          if (saveSource === 'auto' || saveSource === 'manual') {
+            lastAutoSaveSnapshotRef.current = ''
+          }
         }
       } catch (error) {
-        setSaveError(
-          error instanceof Error
-            ? error.message
-            : 'Unable to update image metadata and photoIndex.json.',
-        )
+        if (currentPhotoFilenameRef.current === requestFilename) {
+          setSaveError(
+            error instanceof Error
+              ? error.message
+              : 'Unable to update image metadata and photoIndex.json.',
+          )
+        }
       } finally {
-        setIsSaving(false)
+        if (currentPhotoFilenameRef.current === requestFilename) {
+          setIsSaving(false)
+        }
       }
     },
     [currentPhoto.filename, metadataDraft],
@@ -642,59 +599,9 @@ export default function GeotagPage() {
   ])
 
   useEffect(() => {
-    let isActive = true
-
-    async function loadAiDrafts() {
-      try {
-        const response = await fetch('/api/photoindex/ai-drafts', { cache: 'no-store' })
-        const responseBody = await response.json().catch(() => null)
-        if (!response.ok) {
-          throw new Error(responseBody?.error ?? 'Unable to load AI draft descriptions.')
-        }
-
-        if (!isActive) {
-          return
-        }
-
-        let loadedDraftCount = 0
-        setPhotoEntries((current) => {
-          const { nextPhotos, draftCount } = mergeAiDraftsIntoPhotos(
-            current,
-            responseBody?.drafts ?? [],
-          )
-          loadedDraftCount = draftCount
-          return nextPhotos
-        })
-        setDraftLoadMessage(
-          loadedDraftCount
-            ? `Loaded ${loadedDraftCount} AI draft ${loadedDraftCount === 1 ? 'entry' : 'entries'} from tmp/photo-ai-descriptions.draft.json.`
-            : '',
-        )
-      } catch (error) {
-        if (!isActive) {
-          return
-        }
-
-        setDraftLoadMessage(
-          error instanceof Error ? error.message : 'Unable to load AI draft descriptions.',
-        )
-      }
-    }
-
-    void loadAiDrafts()
-
-    return () => {
-      isActive = false
-    }
-  }, [])
-
-  useEffect(() => {
-    if (hasPendingChanges && !shouldHydrateAiDescriptionDraft(metadataDraft, savedMetadataDraft)) {
-      return
-    }
-
+    currentPhotoFilenameRef.current = currentPhoto.filename
     setMetadataDraft(createMetadataDraft(currentPhoto))
-  }, [currentPhoto, hasPendingChanges, metadataDraft, savedMetadataDraft])
+  }, [currentPhoto])
 
   useEffect(() => {
     const handleKeydown = (event) => {
@@ -840,8 +747,6 @@ export default function GeotagPage() {
               Showing {landmarkAnnotations.length} landmark overlay
               {landmarkAnnotations.length === 1 ? '' : 's'} from the AI description.
             </p>
-          ) : draftLoadMessage ? (
-            <p className="geotag-status">{draftLoadMessage}</p>
           ) : null}
 
           <section className="geotag-ai-panel">
@@ -864,8 +769,6 @@ export default function GeotagPage() {
             <p className={`geotag-ai-status${aiDescriptionPreview.error ? ' geotag-ai-status-error' : ''}`}>
               {currentAiStatus}
             </p>
-            {draftLoadMessage ? <p className="geotag-ai-meta">{draftLoadMessage}</p> : null}
-
             {aiDescriptionValue ? (
               <div className="geotag-ai-content">
                 <div className="geotag-ai-grid">
@@ -1173,9 +1076,6 @@ export default function GeotagPage() {
 
             {saveError ? <p className="geotag-status geotag-status-error">{saveError}</p> : null}
             {saveMessage ? <p className="geotag-status">{saveMessage}</p> : null}
-            {!saveError && !saveMessage && draftLoadMessage ? (
-              <p className="geotag-status">{draftLoadMessage}</p>
-            ) : null}
             {!saveError && !saveMessage ? (
               <p className="geotag-status">
                 {isSaving ? 'Saving changes…' : hasPendingChanges ? 'Unsaved changes queued…' : 'Auto-save is on.'}

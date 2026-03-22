@@ -32,9 +32,11 @@ npm run photo:previews
 
 `photo:index` preserves any existing `aiDescription` values by filename, so approved descriptions survive future metadata rebuilds.
 
-## AI description workflow
+`src/data/photoIndex.json` is the canonical source of truth for published photo metadata, including merged AI descriptions. Any draft files in `tmp/` are temporary review artifacts and can be deleted after merge.
 
-Generate draft descriptions for photos that do not already have approved or edited descriptions:
+## AI description staging workflow
+
+If you want to generate a new review batch in the future, create temporary staged descriptions for photos that do not already have approved or edited descriptions:
 
 ```sh
 npm run photo:describe:draft
@@ -47,11 +49,11 @@ npm run photo:describe:draft -- --limit=2
 npm run photo:describe:draft -- --only=0001,mkjr_20231109_sony-ilce-7cm2_001.jpg
 ```
 
-Drafts are written to `tmp/photo-ai-descriptions.draft.json`.
+This creates a temporary review file at `tmp/photo-ai-descriptions.draft.json`. It is not a live source for the site, and you can delete it after merging.
 
 ## Review and approval
 
-Open `tmp/photo-ai-descriptions.draft.json` and review each generated `aiDescription`.
+Open the temporary staging file and review each generated `aiDescription`.
 
 Use these review states:
 
@@ -76,7 +78,7 @@ Rows still marked `draft` remain only in the review artifact and are skipped dur
 To combine another JSON photo array into the main index without overwriting populated values, use the overlay merge script:
 
 ```sh
-npm run photo:merge:overlay -- --overlay=tmp/photo-ai-descriptions.draft.json --out=tmp/photoIndex.overlay-preview.json
+npm run photo:merge:overlay -- --overlay=tmp/some-overlay.json --out=tmp/photoIndex.overlay-preview.json
 ```
 
 Defaults:

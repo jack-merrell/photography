@@ -8,13 +8,11 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import {
   AiDescriptionSchema,
-  DraftPhotoDescriptionFileSchema,
 } from './scripts/photo_ai_description_helpers.mjs'
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url))
 const photoIndexPath = path.join(rootDir, 'src', 'data', 'photoIndex.json')
 const photosDir = path.join(rootDir, 'public', 'photos')
-const photoAiDraftsPath = path.join(rootDir, 'tmp', 'photo-ai-descriptions.draft.json')
 const swiftScriptPath = path.join(rootDir, 'scripts', 'write_photo_metadata.swift')
 const swiftCachePath = path.join(os.tmpdir(), 'codex-swift-cache')
 
@@ -37,19 +35,6 @@ function readPhotoIndex() {
 
 function writePhotoIndex(nextValue) {
   writeFileSync(photoIndexPath, `${JSON.stringify(nextValue, null, 2)}\n`)
-}
-
-function readPhotoAiDrafts() {
-  try {
-    const parsed = JSON.parse(readFileSync(photoAiDraftsPath, 'utf8'))
-    return DraftPhotoDescriptionFileSchema.parse(parsed)
-  } catch (error) {
-    if (error?.code === 'ENOENT') {
-      return []
-    }
-
-    throw error
-  }
 }
 
 function readJsonBody(request) {
@@ -395,30 +380,6 @@ function photoIndexMetadataApi() {
               error instanceof Error
                 ? error.message
                 : 'Unable to read photoIndex.json.',
-          })
-        }
-      })
-
-      server.middlewares.use('/api/photoindex/ai-drafts', (request, response, next) => {
-        if (request.method !== 'GET') {
-          next()
-          return
-        }
-
-        const url = new URL(request.originalUrl ?? request.url ?? '', 'http://localhost')
-        if (url.pathname !== '/api/photoindex/ai-drafts') {
-          next()
-          return
-        }
-
-        try {
-          writeJson(response, 200, { drafts: readPhotoAiDrafts() })
-        } catch (error) {
-          writeJson(response, 500, {
-            error:
-              error instanceof Error
-                ? error.message
-                : 'Unable to read AI draft descriptions.',
           })
         }
       })
