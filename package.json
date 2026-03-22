@@ -8,13 +8,21 @@
     "build": "vite build",
     "photo:index": "node scripts/build_photo_index.mjs",
     "photo:previews": "node scripts/build_photo_previews.mjs",
+    "photo:describe:draft": "node scripts/generate_photo_ai_descriptions.mjs",
+    "photo:describe:merge": "node scripts/merge_photo_ai_descriptions.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "dotenv": "^17.3.1",
     "framer-motion": "^12.38.0",
+    "leaflet": "^1.9.4",
+    "openai": "^6.32.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "react-leaflet": "^5.0.0",
+    "react-router-dom": "^7.13.1",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

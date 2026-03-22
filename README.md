@@ -1,16 +1,80 @@
-# React + Vite
+# Photography Archive Workflow
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Setup
 
-Currently, two official plugins are available:
+Install dependencies:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```sh
+npm install
+```
 
-## React Compiler
+Add your OpenAI API key to `.env.local` or export it in the shell:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```sh
+OPENAI_API_KEY=your_key_here
+```
 
-## Expanding the ESLint configuration
+`.env.local` is already ignored by git.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Existing photo scripts
+
+Rebuild the metadata index:
+
+```sh
+npm run photo:index
+```
+
+Rebuild the preview images:
+
+```sh
+npm run photo:previews
+```
+
+`photo:index` preserves any existing `aiDescription` values by filename, so approved descriptions survive future metadata rebuilds.
+
+## AI description workflow
+
+Generate draft descriptions for photos that do not already have approved or edited descriptions:
+
+```sh
+npm run photo:describe:draft
+```
+
+Useful targeting flags:
+
+```sh
+npm run photo:describe:draft -- --limit=2
+npm run photo:describe:draft -- --only=0001,mkjr_20231109_sony-ilce-7cm2_001.jpg
+```
+
+Drafts are written to `tmp/photo-ai-descriptions.draft.json`.
+
+## Review and approval
+
+Open `tmp/photo-ai-descriptions.draft.json` and review each generated `aiDescription`.
+
+Use these review states:
+
+- `draft`: not ready to publish yet
+- `approved`: model output is accepted as-is
+- `edited`: manually revised text that is ready to publish
+
+You can edit any part of the structured object before merging.
+
+## Merge approved descriptions
+
+Only rows marked `approved` or `edited` are merged into `src/data/photoIndex.json`:
+
+```sh
+npm run photo:describe:merge
+```
+
+Rows still marked `draft` remain only in the review artifact and are skipped during merge.
+
+## Build check
+
+After merging, confirm the site still bundles correctly:
+
+```sh
+npm run build
+```

@@ -1,0 +1,244 @@
+.geotag-page {
+  min-height: 100vh;
+  padding: 18px;
+  background: #020202;
+  color: #f3f1ec;
+}
+
+.geotag-header,
+.geotag-toolbar,
+.geotag-layout {
+  width: min(1400px, 100%);
+  margin: 0 auto;
+}
+
+.geotag-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.geotag-kicker,
+.geotag-subtitle,
+.geotag-count,
+.geotag-label {
+  color: rgba(243, 241, 236, 0.62);
+}
+
+.geotag-kicker,
+.geotag-count,
+.geotag-subtitle,
+.geotag-value,
+.geotag-toolbar-center,
+.geotag-link,
+.geotag-button,
+.geotag-photo-meta p,
+.geotag-detail-list dt,
+.geotag-detail-list dd {
+  font-size: 0.64rem;
+}
+
+.geotag-title {
+  margin: 4px 0;
+  font-size: 1rem;
+  font-weight: 400;
+}
+
+.geotag-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.geotag-link,
+.geotag-button {
+  border: 1px solid rgba(243, 241, 236, 0.16);
+  background: transparent;
+  color: #f3f1ec;
+  padding: 8px 10px;
+  text-decoration: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.geotag-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  margin-bottom: 18px;
+}
+
+.geotag-toolbar-center {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.geotag-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.8fr) minmax(380px, 1fr);
+  gap: 16px;
+}
+
+.geotag-panel {
+  border: 1px solid rgba(243, 241, 236, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 12px;
+}
+
+.geotag-photo-meta,
+.geotag-coordinates {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.geotag-photo-panel,
+.geotag-map-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.geotag-photo-frame {
+  background: #080808;
+  display: flex;
+  justify-content: center;
+  padding: 18px;
+}
+
+.geotag-photo-image {
+  display: block;
+  width: min(100%, 78%);
+  max-height: 48vh;
+  object-fit: contain;
+}
+
+.geotag-map-shell {
+  overflow: hidden;
+}
+
+.geotag-gps-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.geotag-editor-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.geotag-field {
+  display: grid;
+  gap: 6px;
+}
+
+.geotag-field-wide {
+  grid-column: 1 / -1;
+}
+
+.geotag-input {
+  border: 1px solid rgba(243, 241, 236, 0.16);
+  background: rgba(255, 255, 255, 0.03);
+  color: #f3f1ec;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.geotag-textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.geotag-map {
+  height: min(72vh, 620px);
+  width: 100%;
+  background: #080808;
+}
+
+.geotag-form-actions {
+  grid-column: 1 / -1;
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.geotag-gps-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.geotag-danger-zone {
+  border: 1px solid rgba(255, 155, 143, 0.28);
+  background: rgba(255, 155, 143, 0.05);
+  padding: 10px;
+}
+
+.geotag-danger-title,
+.geotag-danger-copy {
+  margin: 0;
+}
+
+.geotag-danger-title {
+  color: #ffb2a8;
+}
+
+.geotag-danger-copy {
+  color: rgba(243, 241, 236, 0.72);
+}
+
+.geotag-status {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: rgba(243, 241, 236, 0.72);
+}
+
+.geotag-status-error {
+  color: #ff9b8f;
+}
+
+@media (max-width: 960px) {
+  .geotag-page {
+    padding: 12px;
+  }
+
+  .geotag-header,
+  .geotag-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .geotag-actions {
+    justify-content: flex-start;
+  }
+
+  .geotag-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .geotag-editor-form {
+    grid-template-columns: 1fr;
+  }
+
+  .geotag-gps-form {
+    grid-template-columns: 1fr;
+  }
+
+  .geotag-map {
+    height: 48vh;
+  }
+}
