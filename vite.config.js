@@ -6,10 +6,15 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import {
+  AiDescriptionSchema,
+  DraftPhotoDescriptionFileSchema,
+} from './scripts/photo_ai_description_helpers.mjs'
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url))
 const photoIndexPath = path.join(rootDir, 'src', 'data', 'photoIndex.json')
 const photosDir = path.join(rootDir, 'public', 'photos')
+const photoAiDraftsPath = path.join(rootDir, 'tmp', 'photo-ai-descriptions.draft.json')
 const swiftScriptPath = path.join(rootDir, 'scripts', 'write_photo_metadata.swift')
 const swiftCachePath = path.join(os.tmpdir(), 'codex-swift-cache')
 
@@ -32,6 +37,19 @@ function readPhotoIndex() {
 
 function writePhotoIndex(nextValue) {
   writeFileSync(photoIndexPath, `${JSON.stringify(nextValue, null, 2)}\n`)
+}
+
+function readPhotoAiDrafts() {
+  try {
+    const parsed = JSON.parse(readFileSync(photoAiDraftsPath, 'utf8'))
+    return DraftPhotoDescriptionFileSchema.parse(parsed)
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return []
+    }
+
+    throw error
+  }
 }
 
 function readJsonBody(request) {
@@ -89,6 +107,30 @@ function normalizeRequiredText(rawValue, label) {
   }
 
   return text
+}
+
+function normalizeAiDescription(rawValue) {
+  if (rawValue == null || rawValue === '') {
+    return null
+  }
+
+  let parsedValue = rawValue
+  if (typeof rawValue === 'string') {
+    try {
+      parsedValue = JSON.parse(rawValue)
+    } catch {
+      throw new RequestError(400, 'AI description must be valid JSON or blank.')
+    }
+  }
+
+  try {
+    return AiDescriptionSchema.parse(parsedValue)
+  } catch (error) {
+    const firstIssue = error?.issues?.[0]
+    const pathLabel = firstIssue?.path?.length ? firstIssue.path.join('.') : 'aiDescription'
+    const message = firstIssue?.message ?? 'AI description is invalid.'
+    throw new RequestError(400, `${pathLabel}: ${message}`)
+  }
 }
 
 function normalizeOptionalInteger(rawValue, label, { minimum = null, maximum = null } = {}) {
@@ -189,7 +231,7 @@ function normalizeMetadataFields(fields, currentEntry) {
     maximum: 360,
     precision: 6,
   })
-  const aiDescription = normalizeOptionalText(fields.aiDescription)
+  const aiDescription = normalizeAiDescription(fields.aiDescription)
 
   if ((latitude == null) !== (longitude == null)) {
     throw new RequestError(400, 'Latitude and longitude must be set together.')
@@ -339,6 +381,12 @@ function photoIndexMetadataApi() {
           return
         }
 
+        const url = new URL(request.originalUrl ?? request.url ?? '', 'http://localhost')
+        if (url.pathname !== '/api/photoindex') {
+          next()
+          return
+        }
+
         try {
           writeJson(response, 200, { photos: readPhotoIndex() })
         } catch (error) {
@@ -347,6 +395,30 @@ function photoIndexMetadataApi() {
               error instanceof Error
                 ? error.message
                 : 'Unable to read photoIndex.json.',
+          })
+        }
+      })
+
+      server.middlewares.use('/api/photoindex/ai-drafts', (request, response, next) => {
+        if (request.method !== 'GET') {
+          next()
+          return
+        }
+
+        const url = new URL(request.originalUrl ?? request.url ?? '', 'http://localhost')
+        if (url.pathname !== '/api/photoindex/ai-drafts') {
+          next()
+          return
+        }
+
+        try {
+          writeJson(response, 200, { drafts: readPhotoAiDrafts() })
+        } catch (error) {
+          writeJson(response, 500, {
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Unable to read AI draft descriptions.',
           })
         }
       })

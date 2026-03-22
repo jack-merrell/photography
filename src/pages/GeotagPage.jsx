@@ -37,6 +37,14 @@ function draftValue(value) {
   return value == null ? '' : String(value)
 }
 
+function stringifyAiDescription(value) {
+  if (!value) {
+    return ''
+  }
+
+  return JSON.stringify(value, null, 2)
+}
+
 function formatTimestampForInput(timestamp) {
   if (!timestamp) {
     return ''
@@ -79,6 +87,85 @@ function getPhotoCoordinates(photo) {
   return null
 }
 
+function parseAiDescriptionDraft(rawValue) {
+  const value = rawValue.trim()
+
+  if (!value) {
+    return { value: null, error: null }
+  }
+
+  try {
+    const parsedValue = JSON.parse(value)
+    if (!parsedValue || typeof parsedValue !== 'object' || Array.isArray(parsedValue)) {
+      return { value: null, error: 'AI description JSON must be an object.' }
+    }
+
+    return { value: parsedValue, error: null }
+  } catch {
+    return { value: null, error: 'AI description JSON must be valid JSON.' }
+  }
+}
+
+function getLandmarkAnnotations(aiDescription) {
+  if (!aiDescription || typeof aiDescription !== 'object') {
+    return []
+  }
+
+  const annotations = aiDescription.landmarkAnnotations
+  if (!Array.isArray(annotations)) {
+    return []
+  }
+
+  return annotations.filter((annotation) => {
+    if (!annotation || typeof annotation !== 'object' || typeof annotation.label !== 'string') {
+      return false
+    }
+
+    if (
+      annotation.kind === 'point' &&
+      typeof annotation.x === 'number' &&
+      typeof annotation.y === 'number'
+    ) {
+      return true
+    }
+
+    return (
+      annotation.kind === 'box' &&
+      typeof annotation.x === 'number' &&
+      typeof annotation.y === 'number' &&
+      typeof annotation.width === 'number' &&
+      typeof annotation.height === 'number'
+    )
+  })
+}
+
+function mergeAiDraftsIntoPhotos(photos, drafts) {
+  if (!Array.isArray(drafts) || drafts.length === 0) {
+    return { nextPhotos: photos, draftCount: 0 }
+  }
+
+  const draftByFilename = new Map(
+    drafts
+      .filter((draft) => draft && typeof draft.filename === 'string')
+      .map((draft) => [draft.filename, draft.aiDescription ?? null]),
+  )
+
+  let draftCount = 0
+  const nextPhotos = photos.map((photo) => {
+    if (photo.aiDescription || !draftByFilename.has(photo.filename)) {
+      return photo
+    }
+
+    draftCount += 1
+    return {
+      ...photo,
+      aiDescription: draftByFilename.get(photo.filename),
+    }
+  })
+
+  return { nextPhotos, draftCount }
+}
+
 function createMetadataDraft(photo) {
   return {
     captureTimestamp: formatTimestampForInput(photo.captureTimestamp),
@@ -96,7 +183,7 @@ function createMetadataDraft(photo) {
     longitude: draftValue(photo.longitude),
     altitude: draftValue(photo.altitude),
     imageDirection: draftValue(photo.imageDirection),
-    aiDescription: photo.aiDescription ?? '',
+    aiDescription: stringifyAiDescription(photo.aiDescription),
   }
 }
 
@@ -105,6 +192,63 @@ function createSaveFields(draft) {
     ...draft,
     captureTimestamp: formatInputTimestampForSave(draft.captureTimestamp),
   }
+}
+
+function formatAiValue(value) {
+  if (value == null || value === '') {
+    return '—'
+  }
+
+  return String(value).replaceAll('_', ' ')
+}
+
+function formatAiLabel(value) {
+  return formatAiValue(value).replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+function getAiTagSections(aiDescription) {
+  if (!aiDescription || typeof aiDescription !== 'object' || !aiDescription.tags) {
+    return []
+  }
+
+  const sections = [
+    ['Genres', aiDescription.tags.genres],
+    ['Presence', aiDescription.tags.presence],
+    ['Subjects', aiDescription.tags.subjectTags],
+    ['Setting', aiDescription.tags.settingTags],
+    ['Style', aiDescription.tags.styleTags],
+  ]
+
+  return sections
+    .map(([label, values]) => [
+      label,
+      Array.isArray(values) ? values.filter((value) => typeof value === 'string' && value.trim()) : [],
+    ])
+    .filter(([, values]) => values.length > 0)
+}
+
+function shouldHydrateAiDescriptionDraft(metadataDraft, savedMetadataDraft) {
+  if (!metadataDraft || !savedMetadataDraft) {
+    return false
+  }
+
+  const currentAiDescription = metadataDraft.aiDescription.trim()
+  const nextAiDescription = savedMetadataDraft.aiDescription.trim()
+
+  if (currentAiDescription || !nextAiDescription) {
+    return false
+  }
+
+  const currentWithoutAi = createSaveFields({
+    ...metadataDraft,
+    aiDescription: '',
+  })
+  const savedWithoutAi = createSaveFields({
+    ...savedMetadataDraft,
+    aiDescription: '',
+  })
+
+  return JSON.stringify(currentWithoutAi) === JSON.stringify(savedWithoutAi)
 }
 
 function collectExistingValues(entries, field) {
@@ -177,6 +321,7 @@ export default function GeotagPage() {
   const [destructiveUnlockValue, setDestructiveUnlockValue] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
   const [saveError, setSaveError] = useState('')
+  const [draftLoadMessage, setDraftLoadMessage] = useState('')
   const lastAltitudeLookupKeyRef = useRef('')
   const lastManualGpsLookupVersionRef = useRef(0)
   const lastAutoSaveSnapshotRef = useRef('')
@@ -191,6 +336,42 @@ export default function GeotagPage() {
     () => parsePreviewCoordinates(metadataDraft.latitude, metadataDraft.longitude),
     [metadataDraft.latitude, metadataDraft.longitude],
   )
+  const aiDescriptionPreview = useMemo(
+    () => parseAiDescriptionDraft(metadataDraft.aiDescription),
+    [metadataDraft.aiDescription],
+  )
+  const aiDescriptionValue = aiDescriptionPreview.value
+  const landmarkAnnotations = useMemo(
+    () => getLandmarkAnnotations(aiDescriptionValue),
+    [aiDescriptionValue],
+  )
+  const aiTagSections = useMemo(() => getAiTagSections(aiDescriptionValue), [aiDescriptionValue])
+  const currentAiStatus = useMemo(() => {
+    if (aiDescriptionPreview.error) {
+      return aiDescriptionPreview.error
+    }
+
+    if (landmarkAnnotations.length) {
+      return `AI overlays active for this photo: ${landmarkAnnotations.length} landmark annotation${landmarkAnnotations.length === 1 ? '' : 's'}.`
+    }
+
+    if (currentPhoto.aiDescription) {
+      return 'AI description loaded for this photo, but it does not include landmark overlays.'
+    }
+
+    return 'No AI draft data loaded for this photo yet.'
+  }, [
+    aiDescriptionPreview.error,
+    currentPhoto.aiDescription,
+    landmarkAnnotations.length,
+  ])
+  const aiStatusTone = aiDescriptionPreview.error
+    ? 'error'
+    : landmarkAnnotations.length
+      ? 'active'
+      : aiDescriptionValue
+        ? 'ready'
+        : 'idle'
   const previewCoordinates = previewResult.coordinates ?? currentCoordinates
   const currentDraftSnapshot = useMemo(
     () => JSON.stringify(createSaveFields(metadataDraft)),
@@ -347,6 +528,13 @@ export default function GeotagPage() {
 
   const handleSave = useCallback(
     async (draftToSave = metadataDraft, saveSource = 'manual') => {
+      const aiDescriptionDraft = parseAiDescriptionDraft(draftToSave.aiDescription)
+      if (aiDescriptionDraft.error) {
+        setSaveError(aiDescriptionDraft.error)
+        setSaveMessage('')
+        return
+      }
+
       setIsSaving(true)
       setSaveMessage('')
       setSaveError('')
@@ -427,6 +615,7 @@ export default function GeotagPage() {
       !hasPendingChanges ||
       isSaving ||
       isFetchingAltitude ||
+      aiDescriptionPreview.error ||
       previewResult.error ||
       currentDraftSnapshot === lastAutoSaveSnapshotRef.current
     ) {
@@ -448,8 +637,64 @@ export default function GeotagPage() {
     isFetchingAltitude,
     isSaving,
     metadataDraft,
+    aiDescriptionPreview.error,
     previewResult.error,
   ])
+
+  useEffect(() => {
+    let isActive = true
+
+    async function loadAiDrafts() {
+      try {
+        const response = await fetch('/api/photoindex/ai-drafts', { cache: 'no-store' })
+        const responseBody = await response.json().catch(() => null)
+        if (!response.ok) {
+          throw new Error(responseBody?.error ?? 'Unable to load AI draft descriptions.')
+        }
+
+        if (!isActive) {
+          return
+        }
+
+        let loadedDraftCount = 0
+        setPhotoEntries((current) => {
+          const { nextPhotos, draftCount } = mergeAiDraftsIntoPhotos(
+            current,
+            responseBody?.drafts ?? [],
+          )
+          loadedDraftCount = draftCount
+          return nextPhotos
+        })
+        setDraftLoadMessage(
+          loadedDraftCount
+            ? `Loaded ${loadedDraftCount} AI draft ${loadedDraftCount === 1 ? 'entry' : 'entries'} from tmp/photo-ai-descriptions.draft.json.`
+            : '',
+        )
+      } catch (error) {
+        if (!isActive) {
+          return
+        }
+
+        setDraftLoadMessage(
+          error instanceof Error ? error.message : 'Unable to load AI draft descriptions.',
+        )
+      }
+    }
+
+    void loadAiDrafts()
+
+    return () => {
+      isActive = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (hasPendingChanges && !shouldHydrateAiDescriptionDraft(metadataDraft, savedMetadataDraft)) {
+      return
+    }
+
+    setMetadataDraft(createMetadataDraft(currentPhoto))
+  }, [currentPhoto, hasPendingChanges, metadataDraft, savedMetadataDraft])
 
   useEffect(() => {
     const handleKeydown = (event) => {
@@ -544,12 +789,170 @@ export default function GeotagPage() {
           </div>
 
           <div className="geotag-photo-frame">
-            <img
-              alt=""
-              className="geotag-photo-image"
-              src={`/previews/${currentPhoto.filename}`}
-            />
+            <div className="geotag-photo-stage">
+              <img
+                alt=""
+                className="geotag-photo-image"
+                src={`/previews/${currentPhoto.filename}`}
+              />
+              {landmarkAnnotations.length ? (
+                <div className="geotag-photo-overlay">
+                  {landmarkAnnotations.map((annotation, index) => {
+                    if (annotation.kind === 'point') {
+                      return (
+                        <div
+                          className="geotag-landmark geotag-landmark-point"
+                          key={`${annotation.label}-${index}`}
+                          style={{
+                            left: `${annotation.x * 100}%`,
+                            top: `${annotation.y * 100}%`,
+                          }}
+                        >
+                          <span className="geotag-landmark-dot" />
+                          <span className="geotag-landmark-label">{annotation.label}</span>
+                        </div>
+                      )
+                    }
+
+                    return (
+                      <div
+                        className="geotag-landmark geotag-landmark-box"
+                        key={`${annotation.label}-${index}`}
+                        style={{
+                          left: `${annotation.x * 100}%`,
+                          top: `${annotation.y * 100}%`,
+                          width: `${annotation.width * 100}%`,
+                          height: `${annotation.height * 100}%`,
+                        }}
+                      >
+                        <span className="geotag-landmark-label">{annotation.label}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : null}
+            </div>
           </div>
+          {aiDescriptionPreview.error ? (
+            <p className="geotag-status geotag-status-error">{aiDescriptionPreview.error}</p>
+          ) : landmarkAnnotations.length ? (
+            <p className="geotag-status">
+              Showing {landmarkAnnotations.length} landmark overlay
+              {landmarkAnnotations.length === 1 ? '' : 's'} from the AI description.
+            </p>
+          ) : draftLoadMessage ? (
+            <p className="geotag-status">{draftLoadMessage}</p>
+          ) : null}
+
+          <section className="geotag-ai-panel">
+            <div className="geotag-ai-header">
+              <div>
+                <p className="geotag-kicker">AI analysis</p>
+                <h2 className="geotag-ai-title">Readable summary</h2>
+              </div>
+              <span className={`geotag-ai-badge geotag-ai-badge-${aiStatusTone}`}>
+                {aiDescriptionPreview.error
+                  ? 'Invalid JSON'
+                  : landmarkAnnotations.length
+                    ? `${landmarkAnnotations.length} overlays`
+                    : aiDescriptionValue
+                      ? 'Loaded'
+                      : 'Empty'}
+              </span>
+            </div>
+
+            <p className={`geotag-ai-status${aiDescriptionPreview.error ? ' geotag-ai-status-error' : ''}`}>
+              {currentAiStatus}
+            </p>
+            {draftLoadMessage ? <p className="geotag-ai-meta">{draftLoadMessage}</p> : null}
+
+            {aiDescriptionValue ? (
+              <div className="geotag-ai-content">
+                <div className="geotag-ai-grid">
+                  <div className="geotag-ai-stat">
+                    <span className="geotag-label">Time of day</span>
+                    <strong>{formatAiLabel(aiDescriptionValue.timeOfDay)}</strong>
+                  </div>
+                  <div className="geotag-ai-stat">
+                    <span className="geotag-label">Setting</span>
+                    <strong>{formatAiValue(aiDescriptionValue.setting)}</strong>
+                  </div>
+                  <div className="geotag-ai-stat">
+                    <span className="geotag-label">Mood</span>
+                    <strong>{formatAiValue(aiDescriptionValue.mood)}</strong>
+                  </div>
+                  <div className="geotag-ai-stat">
+                    <span className="geotag-label">Lighting</span>
+                    <strong>{formatAiValue(aiDescriptionValue.lighting)}</strong>
+                  </div>
+                  <div className="geotag-ai-stat">
+                    <span className="geotag-label">Composition</span>
+                    <strong>{formatAiValue(aiDescriptionValue.composition)}</strong>
+                  </div>
+                  <div className="geotag-ai-stat">
+                    <span className="geotag-label">Landmark</span>
+                    <strong>
+                      {aiDescriptionValue.landmark?.isFamousLandmark
+                        ? formatAiValue(aiDescriptionValue.landmark?.name) || 'Flagged'
+                        : 'None flagged'}
+                    </strong>
+                  </div>
+                </div>
+
+                {aiDescriptionValue.description ? (
+                  <div className="geotag-ai-copy">
+                    <p className="geotag-label">Description</p>
+                    <p>{aiDescriptionValue.description}</p>
+                  </div>
+                ) : null}
+
+                {Array.isArray(aiDescriptionValue.subjects) && aiDescriptionValue.subjects.length ? (
+                  <div className="geotag-ai-section">
+                    <p className="geotag-label">Subjects</p>
+                    <div className="geotag-ai-chip-row">
+                      {aiDescriptionValue.subjects.map((subject) => (
+                        <span className="geotag-ai-chip" key={subject}>
+                          {subject}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {Array.isArray(aiDescriptionValue.notableDetails) &&
+                aiDescriptionValue.notableDetails.length ? (
+                  <div className="geotag-ai-section">
+                    <p className="geotag-label">Notable details</p>
+                    <ul className="geotag-ai-list">
+                      {aiDescriptionValue.notableDetails.map((detail) => (
+                        <li key={detail}>{detail}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {aiTagSections.length ? (
+                  <div className="geotag-ai-section">
+                    <p className="geotag-label">Tags</p>
+                    <div className="geotag-ai-tag-groups">
+                      {aiTagSections.map(([label, values]) => (
+                        <div className="geotag-ai-tag-group" key={label}>
+                          <p className="geotag-ai-tag-title">{label}</p>
+                          <div className="geotag-ai-chip-row">
+                            {values.map((value) => (
+                              <span className="geotag-ai-chip" key={`${label}-${value}`}>
+                                {formatAiValue(value)}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
 
           <form
             className="geotag-editor-form"
@@ -717,14 +1120,28 @@ export default function GeotagPage() {
               </select>
             </label>
 
-            <label className="geotag-field geotag-field-wide">
-              <span className="geotag-label">Description</span>
-              <textarea
-                className="geotag-input geotag-textarea"
-                onChange={(event) => handleDraftChange('aiDescription', event.target.value)}
-                value={metadataDraft.aiDescription}
-              />
-            </label>
+            <details
+              className="geotag-advanced geotag-field geotag-field-wide"
+              open={Boolean(aiDescriptionPreview.error)}
+            >
+              <summary className="geotag-advanced-summary">
+                <span>Advanced AI JSON</span>
+                <span className="geotag-advanced-hint">
+                  {aiDescriptionPreview.error ? 'Needs attention' : 'Optional manual editing'}
+                </span>
+              </summary>
+              <div className="geotag-advanced-body">
+                <label className="geotag-field">
+                  <span className="geotag-label">AI description JSON</span>
+                  <textarea
+                    className="geotag-input geotag-textarea geotag-json-input"
+                    onChange={(event) => handleDraftChange('aiDescription', event.target.value)}
+                    placeholder="Paste structured AI description JSON here"
+                    value={metadataDraft.aiDescription}
+                  />
+                </label>
+              </div>
+            </details>
 
             <div className="geotag-form-actions">
               <button className="geotag-button" disabled={isSaving} type="submit">
@@ -756,6 +1173,9 @@ export default function GeotagPage() {
 
             {saveError ? <p className="geotag-status geotag-status-error">{saveError}</p> : null}
             {saveMessage ? <p className="geotag-status">{saveMessage}</p> : null}
+            {!saveError && !saveMessage && draftLoadMessage ? (
+              <p className="geotag-status">{draftLoadMessage}</p>
+            ) : null}
             {!saveError && !saveMessage ? (
               <p className="geotag-status">
                 {isSaving ? 'Saving changes…' : hasPendingChanges ? 'Unsaved changes queued…' : 'Auto-save is on.'}

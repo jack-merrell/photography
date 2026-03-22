@@ -71,6 +71,30 @@ npm run photo:describe:merge
 
 Rows still marked `draft` remain only in the review artifact and are skipped during merge.
 
+## Safe overlay merges
+
+To combine another JSON photo array into the main index without overwriting populated values, use the overlay merge script:
+
+```sh
+npm run photo:merge:overlay -- --overlay=tmp/photo-ai-descriptions.draft.json --out=tmp/photoIndex.overlay-preview.json
+```
+
+Defaults:
+
+- `--base=src/data/photoIndex.json`
+- `--out=<same as base>`
+- `--report=tmp/json-merge-report.json`
+
+Rules:
+
+- rows are matched by `filename`
+- `id` must also match for a merge to happen
+- existing populated base values are preserved
+- missing or blank base values are filled
+- unmatched rows, id mismatches, duplicate filenames, and skipped conflicts are written to the report
+
+If you want a dry run, point `--out` at a temp file instead of the main index.
+
 ## Build check
 
 After merging, confirm the site still bundles correctly:

@@ -35,22 +35,23 @@ async function main() {
     return
   }
 
-  const { mergedRows, mergedCount, skippedDraftCount } = mergeApprovedAiDescriptions(
-    photoIndex,
-    draftRows,
-  )
+  const mergeResult = mergeApprovedAiDescriptions(photoIndex, draftRows)
 
-  if (mergedCount === 0) {
+  if (mergeResult.hasBlockingIssues) {
+    throw new Error('Merge aborted because duplicate filename keys were found in the base or draft rows.')
+  }
+
+  if (mergeResult.mergedCount === 0) {
     console.log(
-      `No approved or edited draft rows were found. Skipped ${skippedDraftCount} draft rows.`,
+      `No approved or edited draft rows were found. Skipped ${mergeResult.skippedDraftCount} draft rows.`,
     )
     return
   }
 
-  writeJsonFile(paths.photoIndexPath, mergedRows)
+  writeJsonFile(paths.photoIndexPath, mergeResult.mergedRows)
 
   console.log(
-    `Merged ${mergedCount} AI descriptions into ${path.relative(paths.rootDir, paths.photoIndexPath)}. Skipped ${skippedDraftCount} draft rows that are still pending review.`,
+    `Merged ${mergeResult.mergedCount} AI descriptions into ${path.relative(paths.rootDir, paths.photoIndexPath)}. Skipped ${mergeResult.skippedDraftCount} draft rows that are still pending review. Preserved ${mergeResult.report.skippedConflicts.length} conflicting existing values.`,
   )
 }
 

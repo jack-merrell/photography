@@ -137,6 +137,12 @@ Choose up to 4 styleTags from: ${styleTagList}.
 Only mark a famous landmark when the identification is strongly supported by visible evidence.
 If landmark identification is uncertain or absent, set landmark.isFamousLandmark to false, landmark.name to null, landmark.confidence to 0, and landmark.reviewRequired to false.
 If landmark.isFamousLandmark is true, provide a specific name, a confidence score, and set landmark.reviewRequired to true.
+Add 0-6 landmarkAnnotations that place key visible subjects or landmarks within the image using normalized coordinates from 0 to 1.
+Use kind "point" for precise features or small subjects and kind "box" for larger regions.
+Each landmarkAnnotation must include a short human-readable label and a confidence score.
+For boxes, x and y should represent the top-left corner and width and height should be filled in.
+For points, set width to null and height to null.
+Only include landmarkAnnotations for clearly visible elements that would be useful as image overlays.
 Set confidence to a number between 0 and 1.
 Set reviewStatus to "draft".
 Set provenance.model to "${AI_DESCRIPTION_MODEL}".
@@ -158,7 +164,8 @@ Focus on:
 - the apparent time of day when supportable
 - the emotional register created by the image
 - any notable visual details that a human reviewer would care about
-- the strongest applicable archival tags for genre, presence, subject matter, setting, style, and landmark status`,
+- the strongest applicable archival tags for genre, presence, subject matter, setting, style, and landmark status
+- image-space landmark annotations for the most important visible features or objects`,
           },
           {
             type: 'input_image',

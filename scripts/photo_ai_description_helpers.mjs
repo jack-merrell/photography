@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 
 export const AI_DESCRIPTION_MODEL = 'gpt-5.4'
@@ -26,12 +27,7 @@ export const AI_DESCRIPTION_GENRE_VALUES = [
   'travel',
   'event',
 ]
-export const AI_DESCRIPTION_PRESENCE_VALUES = [
-  'person',
-  'group',
-  'animal',
-  'no_people',
-]
+export const AI_DESCRIPTION_PRESENCE_VALUES = ['person', 'group', 'animal', 'no_people']
 export const AI_DESCRIPTION_SUBJECT_TAG_VALUES = [
   'worker',
   'musician',
@@ -80,6 +76,7 @@ export const AI_DESCRIPTION_STYLE_TAG_VALUES = [
   'centered',
   'layered',
 ]
+export const AI_DESCRIPTION_LANDMARK_ANNOTATION_KIND_VALUES = ['point', 'box']
 
 const TimeOfDaySchema = z.enum(AI_DESCRIPTION_TIME_OF_DAY_VALUES)
 const ReviewStatusSchema = z.enum(AI_DESCRIPTION_REVIEW_STATUS_VALUES)
@@ -116,6 +113,18 @@ const AiDescriptionLandmarkSchema = z
   })
   .strict()
 
+const AiDescriptionLandmarkAnnotationSchema = z
+  .object({
+    label: z.string().trim().min(1),
+    kind: z.enum(AI_DESCRIPTION_LANDMARK_ANNOTATION_KIND_VALUES),
+    x: z.number().min(0).max(1),
+    y: z.number().min(0).max(1),
+    width: z.number().min(0).max(1).nullable(),
+    height: z.number().min(0).max(1).nullable(),
+    confidence: z.number().min(0).max(1),
+  })
+  .strict()
+
 export const AiDescriptionSchema = z
   .object({
     description: z.string().trim().min(1),
@@ -128,6 +137,7 @@ export const AiDescriptionSchema = z
     notableDetails: z.array(z.string().trim().min(1)).min(1).max(10),
     tags: AiDescriptionTagsSchema,
     landmark: AiDescriptionLandmarkSchema,
+    landmarkAnnotations: z.array(AiDescriptionLandmarkAnnotationSchema).max(8),
     confidence: z.number().min(0).max(1),
     reviewStatus: ReviewStatusSchema,
     provenance: AiDescriptionProvenanceSchema,
@@ -140,16 +150,19 @@ export const AiDescriptionEnvelopeSchema = z
   })
   .strict()
 
-export const PhotoIndexRowSchema = z
+export const MergeablePhotoRowSchema = z
   .object({
     id: z.string().trim().min(1),
     filename: z.string().trim().min(1),
-    src: z.string().trim().min(1),
-    captureTimestamp: z.string().trim().min(1),
-    camera: z.string().trim().min(1).nullable().optional(),
-    aiDescription: AiDescriptionSchema.nullable().optional(),
   })
   .passthrough()
+
+export const PhotoIndexRowSchema = MergeablePhotoRowSchema.extend({
+  src: z.string().trim().min(1).optional(),
+  captureTimestamp: z.string().trim().min(1).optional(),
+  camera: z.string().trim().min(1).nullable().optional(),
+  aiDescription: AiDescriptionSchema.nullable().optional(),
+}).passthrough()
 
 export const DraftPhotoDescriptionRowSchema = z
   .object({
@@ -170,6 +183,7 @@ export function createProjectPaths(rootDir = process.cwd()) {
     photoIndexPath: path.join(rootDir, 'src', 'data', 'photoIndex.json'),
     previewsDir: path.join(rootDir, 'public', 'previews'),
     draftPath: path.join(rootDir, 'tmp', 'photo-ai-descriptions.draft.json'),
+    overlayMergeReportPath: path.join(rootDir, 'tmp', 'json-merge-report.json'),
   }
 }
 
@@ -192,6 +206,10 @@ export function readPhotoIndex(photoIndexPath) {
 
 export function readDraftPhotoDescriptions(draftPath) {
   return DraftPhotoDescriptionFileSchema.parse(readJsonFile(draftPath, []))
+}
+
+export function readMergeablePhotoRows(filePath) {
+  return z.array(MergeablePhotoRowSchema).parse(readJsonFile(filePath, []))
 }
 
 export function createDraftPhotoDescriptionRow(photo, aiDescription) {
@@ -243,34 +261,383 @@ export function assertDraftRowsMatchIndex(indexRows, draftRows) {
   }
 }
 
-export function mergeApprovedAiDescriptions(indexRows, draftRows) {
-  assertDraftRowsMatchIndex(indexRows, draftRows)
+function isPlainObject(value) {
+  return value != null && typeof value === 'object' && !Array.isArray(value)
+}
 
-  const draftByFilename = buildFilenameMap(draftRows, 'draft')
-  let mergedCount = 0
-  let skippedDraftCount = 0
+function cloneJsonValue(value) {
+  return value === undefined ? undefined : structuredClone(value)
+}
 
-  const mergedRows = indexRows.map((row) => {
-    const draftRow = draftByFilename.get(row.filename)
-    if (!draftRow) {
-      return row
+function isMissingScalarValue(value) {
+  return value == null || value === ''
+}
+
+function createChangeRecord(row, pathSegments, action) {
+  return {
+    filename: row.filename,
+    id: row.id,
+    path: pathSegments.join('.'),
+    action,
+  }
+}
+
+function createConflictRecord(row, pathSegments, baseValue, overlayValue) {
+  return {
+    filename: row.filename,
+    id: row.id,
+    path: pathSegments.join('.'),
+    baseValue,
+    overlayValue,
+  }
+}
+
+function collectDuplicateKeys(items, source) {
+  const rowsByFilename = new Map()
+
+  for (const item of items) {
+    const existing = rowsByFilename.get(item.filename) ?? []
+    existing.push(item)
+    rowsByFilename.set(item.filename, existing)
+  }
+
+  return [...rowsByFilename.entries()]
+    .filter(([, rows]) => rows.length > 1)
+    .map(([filename, rows]) => ({
+      source,
+      filename,
+      ids: rows.map((row) => row.id),
+    }))
+}
+
+function buildFirstSeenFilenameMap(items) {
+  const byFilename = new Map()
+
+  for (const item of items) {
+    if (!byFilename.has(item.filename)) {
+      byFilename.set(item.filename, item)
+    }
+  }
+
+  return byFilename
+}
+
+export function createOverlayMergeReport() {
+  return {
+    summary: {
+      baseRowCount: 0,
+      overlayRowCount: 0,
+      mergedRowCount: 0,
+      filledFieldCount: 0,
+      skippedConflictCount: 0,
+      unmatchedRowCount: 0,
+      idMismatchCount: 0,
+      duplicateKeyCount: 0,
+      blockingIssueCount: 0,
+    },
+    mergedRows: [],
+    filledFields: [],
+    skippedConflicts: [],
+    unmatchedRows: [],
+    idMismatches: [],
+    duplicateKeys: [],
+  }
+}
+
+export function finalizeOverlayMergeReport(report, { baseRowCount, overlayRowCount }) {
+  report.summary = {
+    baseRowCount,
+    overlayRowCount,
+    mergedRowCount: report.mergedRows.length,
+    filledFieldCount: report.filledFields.length,
+    skippedConflictCount: report.skippedConflicts.length,
+    unmatchedRowCount: report.unmatchedRows.length,
+    idMismatchCount: report.idMismatches.length,
+    duplicateKeyCount: report.duplicateKeys.length,
+    blockingIssueCount: report.duplicateKeys.length,
+  }
+
+  return report
+}
+
+export function analyzeOverlayRows(baseRows, overlayRows) {
+  const report = createOverlayMergeReport()
+  report.duplicateKeys.push(...collectDuplicateKeys(baseRows, 'base'))
+  report.duplicateKeys.push(...collectDuplicateKeys(overlayRows, 'overlay'))
+
+  const baseByFilename = buildFirstSeenFilenameMap(baseRows)
+  const overlayByFilename = buildFirstSeenFilenameMap(overlayRows)
+  const matchedRows = []
+
+  for (const overlayRow of overlayRows) {
+    const baseRow = baseByFilename.get(overlayRow.filename)
+    if (!baseRow) {
+      report.unmatchedRows.push({
+        filename: overlayRow.filename,
+        id: overlayRow.id,
+      })
+      continue
     }
 
-    if (!isFinalizedAiDescription(draftRow.aiDescription)) {
-      skippedDraftCount += 1
-      return row
+    if (overlayRow.id !== baseRow.id) {
+      report.idMismatches.push({
+        filename: overlayRow.filename,
+        baseId: baseRow.id,
+        overlayId: overlayRow.id,
+      })
+      continue
     }
 
-    mergedCount += 1
-    return {
-      ...row,
-      aiDescription: draftRow.aiDescription,
-    }
+    matchedRows.push({
+      baseRow,
+      overlayRow,
+    })
+  }
+
+  finalizeOverlayMergeReport(report, {
+    baseRowCount: baseRows.length,
+    overlayRowCount: overlayRows.length,
   })
 
   return {
-    mergedRows,
-    mergedCount,
-    skippedDraftCount,
+    report,
+    baseByFilename,
+    overlayByFilename,
+    matchedRows,
+    hasBlockingIssues: report.duplicateKeys.length > 0,
+  }
+}
+
+function shouldOverwritePath(pathSegments, overwritePaths) {
+  if (!overwritePaths || overwritePaths.size === 0) {
+    return false
+  }
+
+  return overwritePaths.has(pathSegments.join('.'))
+}
+
+function mergeOverlayValue(baseValue, overlayValue, rowIdentity, pathSegments, options, rowChanges, report) {
+  const overwriteThisPath = shouldOverwritePath(pathSegments, options.overwritePaths)
+  if (overwriteThisPath) {
+    if (overlayValue === undefined || isDeepStrictEqual(baseValue, overlayValue)) {
+      return baseValue
+    }
+
+    const action =
+      baseValue === undefined ? 'added' : isMissingScalarValue(baseValue) ? 'filled' : 'overwritten'
+    const change = createChangeRecord(rowIdentity, pathSegments, action)
+    rowChanges.push(change)
+    report.filledFields.push(change)
+    return cloneJsonValue(overlayValue)
+  }
+
+  if (Array.isArray(overlayValue)) {
+    if (baseValue === undefined) {
+      const change = createChangeRecord(rowIdentity, pathSegments, 'added')
+      rowChanges.push(change)
+      report.filledFields.push(change)
+      return cloneJsonValue(overlayValue)
+    }
+
+    if (!Array.isArray(baseValue)) {
+      if (isMissingScalarValue(baseValue)) {
+        const change = createChangeRecord(rowIdentity, pathSegments, 'filled')
+        rowChanges.push(change)
+        report.filledFields.push(change)
+        return cloneJsonValue(overlayValue)
+      }
+
+      if (!isDeepStrictEqual(baseValue, overlayValue)) {
+        report.skippedConflicts.push(
+          createConflictRecord(rowIdentity, pathSegments, baseValue, overlayValue),
+        )
+      }
+      return baseValue
+    }
+
+    if (baseValue.length === 0 && overlayValue.length > 0) {
+      const change = createChangeRecord(rowIdentity, pathSegments, 'filled')
+      rowChanges.push(change)
+      report.filledFields.push(change)
+      return cloneJsonValue(overlayValue)
+    }
+
+    if (baseValue.length > 0 && overlayValue.length > 0 && !isDeepStrictEqual(baseValue, overlayValue)) {
+      report.skippedConflicts.push(
+        createConflictRecord(rowIdentity, pathSegments, baseValue, overlayValue),
+      )
+    }
+
+    return baseValue
+  }
+
+  if (isPlainObject(overlayValue)) {
+    if (baseValue === undefined) {
+      const change = createChangeRecord(rowIdentity, pathSegments, 'added')
+      rowChanges.push(change)
+      report.filledFields.push(change)
+      return cloneJsonValue(overlayValue)
+    }
+
+    if (!isPlainObject(baseValue)) {
+      if (isMissingScalarValue(baseValue)) {
+        const change = createChangeRecord(rowIdentity, pathSegments, 'filled')
+        rowChanges.push(change)
+        report.filledFields.push(change)
+        return cloneJsonValue(overlayValue)
+      }
+
+      if (!isDeepStrictEqual(baseValue, overlayValue)) {
+        report.skippedConflicts.push(
+          createConflictRecord(rowIdentity, pathSegments, baseValue, overlayValue),
+        )
+      }
+      return baseValue
+    }
+
+    let nextObject = baseValue
+    for (const [key, nestedOverlayValue] of Object.entries(overlayValue)) {
+      const nestedBaseValue = baseValue[key]
+      const nestedPath = [...pathSegments, key]
+      const mergedNestedValue = mergeOverlayValue(
+        nestedBaseValue,
+        nestedOverlayValue,
+        rowIdentity,
+        nestedPath,
+        options,
+        rowChanges,
+        report,
+      )
+
+      if (mergedNestedValue !== nestedBaseValue) {
+        if (nextObject === baseValue) {
+          nextObject = { ...baseValue }
+        }
+        nextObject[key] = mergedNestedValue
+      }
+    }
+
+    return nextObject
+  }
+
+  if (baseValue === undefined) {
+    const change = createChangeRecord(rowIdentity, pathSegments, 'added')
+    rowChanges.push(change)
+    report.filledFields.push(change)
+    return cloneJsonValue(overlayValue)
+  }
+
+  if (isMissingScalarValue(baseValue)) {
+    const change = createChangeRecord(rowIdentity, pathSegments, 'filled')
+    rowChanges.push(change)
+    report.filledFields.push(change)
+    return cloneJsonValue(overlayValue)
+  }
+
+  if (
+    overlayValue !== undefined &&
+    !isMissingScalarValue(overlayValue) &&
+    !isDeepStrictEqual(baseValue, overlayValue)
+  ) {
+    report.skippedConflicts.push(
+      createConflictRecord(rowIdentity, pathSegments, baseValue, overlayValue),
+    )
+  }
+
+  return baseValue
+}
+
+export function mergeJsonOverlayRows(baseRows, overlayRows, options = {}) {
+  const normalizedOptions = {
+    overwritePaths: new Set(options.overwritePaths ?? []),
+  }
+
+  const analysis = analyzeOverlayRows(baseRows, overlayRows)
+  const report = analysis.report
+
+  if (analysis.hasBlockingIssues) {
+    return {
+      mergedRows: baseRows,
+      report,
+      hasBlockingIssues: true,
+    }
+  }
+
+  const nextRows = baseRows.map((baseRow) => {
+    const overlayRow = analysis.overlayByFilename.get(baseRow.filename)
+    if (!overlayRow || overlayRow.id !== baseRow.id) {
+      return baseRow
+    }
+
+    let nextRow = baseRow
+    const rowChanges = []
+
+    for (const [key, overlayValue] of Object.entries(overlayRow)) {
+      if (key === 'id' || key === 'filename') {
+        continue
+      }
+
+      const mergedValue = mergeOverlayValue(
+        baseRow[key],
+        overlayValue,
+        baseRow,
+        [key],
+        normalizedOptions,
+        rowChanges,
+        report,
+      )
+
+      if (mergedValue !== baseRow[key]) {
+        if (nextRow === baseRow) {
+          nextRow = { ...baseRow }
+        }
+        nextRow[key] = mergedValue
+      }
+    }
+
+    if (rowChanges.length > 0) {
+      report.mergedRows.push({
+        filename: baseRow.filename,
+        id: baseRow.id,
+        fieldCount: rowChanges.length,
+        fields: rowChanges.map(({ path, action }) => ({ path, action })),
+      })
+    }
+
+    return nextRow
+  })
+
+  finalizeOverlayMergeReport(report, {
+    baseRowCount: baseRows.length,
+    overlayRowCount: overlayRows.length,
+  })
+
+  return {
+    mergedRows: nextRows,
+    report,
+    hasBlockingIssues: false,
+  }
+}
+
+export function mergeApprovedAiDescriptions(indexRows, draftRows) {
+  const finalizedDraftRows = draftRows
+    .filter((row) => isFinalizedAiDescription(row.aiDescription))
+    .map((row) => ({
+      id: row.id,
+      filename: row.filename,
+      aiDescription: row.aiDescription,
+    }))
+
+  const pendingDraftCount = draftRows.length - finalizedDraftRows.length
+  const overlayMerge = mergeJsonOverlayRows(indexRows, finalizedDraftRows, {
+    overwritePaths: ['aiDescription'],
+  })
+
+  return {
+    mergedRows: overlayMerge.mergedRows,
+    mergedCount: overlayMerge.report.mergedRows.length,
+    skippedDraftCount: pendingDraftCount,
+    report: overlayMerge.report,
+    hasBlockingIssues: overlayMerge.hasBlockingIssues,
   }
 }
