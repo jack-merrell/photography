@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AnimatePresence, motion, useAnimationControls } from 'framer-motion'
 import photoIndex from './data/photoIndex.json'
 import './App.css'
@@ -122,99 +122,190 @@ function formatFlash(value) {
   return flashLabels[value] ?? String(value)
 }
 
-function MobileAssetCard({ isActive, onToggle, photo }) {
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function getDesktopPreviewStyle(photo, rowRect, viewport) {
+  const framePadding = 8
+  const gap = 16
+  const maxFrameWidth = Math.min(viewport.width * 0.36, 560)
+  const maxFrameHeight = viewport.height - 32
+  const maxImageWidth = maxFrameWidth - framePadding * 2
+  const maxImageHeight = maxFrameHeight - framePadding * 2
+  const aspectRatio = photo.width / photo.height
+
+  const imageWidth = Math.min(maxImageWidth, maxImageHeight * aspectRatio)
+  const imageHeight = imageWidth / aspectRatio
+  const frameWidth = imageWidth + framePadding * 2
+  const frameHeight = imageHeight + framePadding * 2
+
+  const topSpace = rowRect.top - gap - 16
+  const bottomSpace = viewport.height - rowRect.bottom - gap - 16
+  const centeredLeft = clamp(
+    viewport.width / 2 - frameWidth / 2,
+    16,
+    viewport.width - frameWidth - 16,
+  )
+
+  if (bottomSpace >= frameHeight) {
+    return {
+      left: centeredLeft,
+      top: rowRect.bottom + gap,
+      width: frameWidth,
+      maxHeight: frameHeight,
+    }
+  }
+
+  if (topSpace >= frameHeight) {
+    return {
+      left: centeredLeft,
+      top: rowRect.top - frameHeight - gap,
+      width: frameWidth,
+      maxHeight: frameHeight,
+    }
+  }
+
+  return {
+    left: centeredLeft,
+    top: clamp(
+      viewport.height / 2 - frameHeight / 2,
+      16,
+      viewport.height - frameHeight - 16,
+    ),
+    width: frameWidth,
+    maxHeight: frameHeight,
+  }
+}
+
+function MobileDetailSheet({ canGoNext, canGoPrevious, onClose, onNext, onPrevious, photo }) {
+  if (!photo) {
+    return null
+  }
+
   return (
-    <article className="mobile-card">
-      <button className="mobile-card-toggle" type="button" onClick={onToggle}>
-        <span className="mobile-card-topline">
-          <span>{photo.id}</span>
-          <span>{formatDate(photo.captureTimestamp)}</span>
-        </span>
-        <span className="mobile-card-headline">
-          <span>{formatCamera(photo.camera)}</span>
-          <span>{isActive ? 'Hide preview' : 'Show preview'}</span>
-        </span>
-      </button>
+    <>
+      <motion.button
+        aria-label="Close photo details"
+        className="mobile-detail-backdrop"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, transition: { duration: 0.18 } }}
+        exit={{ opacity: 0, transition: { duration: 0.22 } }}
+        onClick={onClose}
+        type="button"
+      />
+      <motion.aside
+        aria-label="Selected photo details"
+        className="mobile-detail-sheet"
+        initial={{ opacity: 0, y: 32 }}
+        animate={{
+          opacity: 1,
+          y: 0,
+          transition: {
+            duration: 0.24,
+            ease: [0.16, 1, 0.3, 1],
+          },
+        }}
+        exit={{
+          opacity: 0,
+          y: 24,
+          transition: {
+            duration: 0.24,
+            ease: [0.22, 1, 0.36, 1],
+          },
+        }}
+      >
+        <div className="mobile-detail-head">
+          <div>
+            <p className="mobile-detail-kicker">{photo.id}</p>
+            <h2 className="mobile-detail-title">{formatCamera(photo.camera)}</h2>
+            <p className="mobile-detail-date">{formatDate(photo.captureTimestamp)}</p>
+          </div>
+          <button className="mobile-detail-close" onClick={onClose} type="button">
+            Close
+          </button>
+        </div>
 
-      <div className="mobile-card-summary">
-        <span>{formatLens(photo.lens)}</span>
-        <span>{formatDimensions(photo.width, photo.height)}</span>
-      </div>
+        <div className="mobile-detail-preview">
+          <img
+            src={`/previews/${photo.filename}`}
+            alt=""
+            className="mobile-detail-image"
+          />
+        </div>
 
-      <AnimatePresence initial={false}>
-        {isActive ? (
-          <motion.div
-            className="mobile-preview"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{
-              opacity: 1,
-              height: 'auto',
-              transition: {
-                duration: 0.22,
-                ease: [0.16, 1, 0.3, 1],
-              },
-            }}
-            exit={{
-              opacity: 0,
-              height: 0,
-              transition: {
-                duration: 0.3,
-                ease: [0.22, 1, 0.36, 1],
-              },
-            }}
+        <div className="mobile-detail-nav">
+          <button
+            className="mobile-detail-nav-button"
+            disabled={!canGoPrevious}
+            onClick={onPrevious}
+            type="button"
           >
-            <img
-              src={`/previews/${photo.filename}`}
-              alt=""
-              className="mobile-preview-image"
-            />
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+            Previous
+          </button>
+          <button
+            className="mobile-detail-nav-button"
+            disabled={!canGoNext}
+            onClick={onNext}
+            type="button"
+          >
+            Next
+          </button>
+        </div>
 
-      <dl className="mobile-meta">
-        <div>
-          <dt>Focal</dt>
-          <dd>{formatFocalLength(photo.focalLength, photo.focalLength35mm)}</dd>
-        </div>
-        <div>
-          <dt>Shutter</dt>
-          <dd>{formatExposure(photo.exposureTimeSeconds)}</dd>
-        </div>
-        <div>
-          <dt>Aperture</dt>
-          <dd>{formatAperture(photo.aperture)}</dd>
-        </div>
-        <div>
-          <dt>ISO</dt>
-          <dd>{formatIso(photo.iso)}</dd>
-        </div>
-        <div>
-          <dt>Flash</dt>
-          <dd>{formatFlash(photo.flashOn)}</dd>
-        </div>
-        <div>
-          <dt>WB</dt>
-          <dd>{formatWhiteBalance(photo.whiteBalance)}</dd>
-        </div>
-        <div>
-          <dt>File size</dt>
-          <dd>{formatFileSize(photo.fileSizeBytes)}</dd>
-        </div>
-        <div>
-          <dt>Filename</dt>
-          <dd>{photo.filename}</dd>
-        </div>
-      </dl>
-    </article>
+        <dl className="mobile-detail-grid">
+          <div>
+            <dt>Lens</dt>
+            <dd>{formatLens(photo.lens)}</dd>
+          </div>
+          <div>
+            <dt>Focal</dt>
+            <dd>{formatFocalLength(photo.focalLength, photo.focalLength35mm)}</dd>
+          </div>
+          <div>
+            <dt>Shutter</dt>
+            <dd>{formatExposure(photo.exposureTimeSeconds)}</dd>
+          </div>
+          <div>
+            <dt>Aperture</dt>
+            <dd>{formatAperture(photo.aperture)}</dd>
+          </div>
+          <div>
+            <dt>ISO</dt>
+            <dd>{formatIso(photo.iso)}</dd>
+          </div>
+          <div>
+            <dt>Flash</dt>
+            <dd>{formatFlash(photo.flashOn)}</dd>
+          </div>
+          <div>
+            <dt>WB</dt>
+            <dd>{formatWhiteBalance(photo.whiteBalance)}</dd>
+          </div>
+          <div>
+            <dt>Size</dt>
+            <dd>{formatFileSize(photo.fileSizeBytes)}</dd>
+          </div>
+          <div>
+            <dt>Dimensions</dt>
+            <dd>{formatDimensions(photo.width, photo.height)}</dd>
+          </div>
+          <div>
+            <dt>Filename</dt>
+            <dd>{photo.filename}</dd>
+          </div>
+        </dl>
+      </motion.aside>
+    </>
   )
 }
 
-function AssetRow({ photo, onPreviewChange }) {
+function AssetRow({ photo, onPreviewChange, onSelectPhoto }) {
   const controls = useAnimationControls()
 
-  const activate = () => {
-    onPreviewChange(photo)
+  const activate = (element) => {
+    const rowRect = element.getBoundingClientRect()
+    onPreviewChange({ photo, rowRect })
     controls.start({
       backgroundColor: 'rgba(243, 241, 236, 0.08)',
       transition: {
@@ -242,10 +333,17 @@ function AssetRow({ photo, onPreviewChange }) {
       animate={controls}
       initial={{ backgroundColor: 'rgba(243, 241, 236, 0)' }}
       tabIndex={0}
-      onHoverStart={activate}
-      onHoverEnd={deactivate}
-      onFocus={activate}
+      onClick={() => onSelectPhoto(photo)}
+      onMouseEnter={(event) => activate(event.currentTarget)}
+      onMouseLeave={deactivate}
+      onFocus={(event) => activate(event.currentTarget)}
       onBlur={deactivate}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onSelectPhoto(photo)
+        }
+      }}
     >
       <td>{photo.id}</td>
       <td>{formatDate(photo.captureTimestamp)}</td>
@@ -264,8 +362,30 @@ function AssetRow({ photo, onPreviewChange }) {
 }
 
 function App() {
-  const [hoveredPhoto, setHoveredPhoto] = useState(null)
-  const [activeMobilePhoto, setActiveMobilePhoto] = useState(null)
+  const [desktopPreview, setDesktopPreview] = useState(null)
+  const [activeMobileIndex, setActiveMobileIndex] = useState(null)
+  const activeMobilePhoto =
+    activeMobileIndex == null ? null : photoIndex[activeMobileIndex]
+  const [viewport, setViewport] = useState({
+    width: typeof window === 'undefined' ? 1440 : window.innerWidth,
+    height: typeof window === 'undefined' ? 900 : window.innerHeight,
+  })
+
+  useEffect(() => {
+    const updateViewport = () => {
+      setViewport({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      })
+    }
+
+    updateViewport()
+    window.addEventListener('resize', updateViewport)
+
+    return () => {
+      window.removeEventListener('resize', updateViewport)
+    }
+  }, [])
 
   return (
     <main className="archive-page">
@@ -279,10 +399,7 @@ function App() {
         <p className="archive-count">{photoIndex.length} assets</p>
       </header>
 
-      <section
-        className="archive-table-wrap archive-desktop"
-        aria-label="Photography asset index"
-      >
+      <section className="archive-table-wrap" aria-label="Photography asset index">
         <table className="archive-table">
           <thead>
             <tr>
@@ -301,37 +418,28 @@ function App() {
             </tr>
           </thead>
           <tbody>
-            {photoIndex.map((photo) => (
+            {photoIndex.map((photo, index) => (
               <AssetRow
                 key={photo.filename}
                 photo={photo}
-                onPreviewChange={setHoveredPhoto}
+                onPreviewChange={setDesktopPreview}
+                onSelectPhoto={() => setActiveMobileIndex(index)}
               />
             ))}
           </tbody>
         </table>
       </section>
 
-      <section className="archive-mobile" aria-label="Mobile photography asset index">
-        {photoIndex.map((photo) => (
-          <MobileAssetCard
-            key={photo.filename}
-            photo={photo}
-            isActive={activeMobilePhoto === photo.filename}
-            onToggle={() =>
-              setActiveMobilePhoto((current) =>
-                current === photo.filename ? null : photo.filename,
-              )
-            }
-          />
-        ))}
-      </section>
-
       <AnimatePresence>
-        {hoveredPhoto ? (
+        {desktopPreview ? (
           <motion.aside
-            key={hoveredPhoto.filename}
+            key={desktopPreview.photo.filename}
             className="hover-preview"
+            style={getDesktopPreviewStyle(
+              desktopPreview.photo,
+              desktopPreview.rowRect,
+              viewport,
+            )}
             initial={{ opacity: 0, y: 22, scale: 0.975 }}
             animate={{
               opacity: 1,
@@ -353,11 +461,32 @@ function App() {
             }}
           >
             <img
-              src={`/previews/${hoveredPhoto.filename}`}
+              src={`/previews/${desktopPreview.photo.filename}`}
               alt=""
               className="hover-preview-image"
             />
           </motion.aside>
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {activeMobilePhoto ? (
+          <MobileDetailSheet
+            canGoNext={activeMobileIndex < photoIndex.length - 1}
+            canGoPrevious={activeMobileIndex > 0}
+            onClose={() => setActiveMobileIndex(null)}
+            onNext={() =>
+              setActiveMobileIndex((current) =>
+                current == null ? current : Math.min(current + 1, photoIndex.length - 1),
+              )
+            }
+            onPrevious={() =>
+              setActiveMobileIndex((current) =>
+                current == null ? current : Math.max(current - 1, 0),
+              )
+            }
+            photo={activeMobilePhoto}
+          />
         ) : null}
       </AnimatePresence>
     </main>
