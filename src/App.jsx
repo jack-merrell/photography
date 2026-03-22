@@ -122,6 +122,94 @@ function formatFlash(value) {
   return flashLabels[value] ?? String(value)
 }
 
+function MobileAssetCard({ isActive, onToggle, photo }) {
+  return (
+    <article className="mobile-card">
+      <button className="mobile-card-toggle" type="button" onClick={onToggle}>
+        <span className="mobile-card-topline">
+          <span>{photo.id}</span>
+          <span>{formatDate(photo.captureTimestamp)}</span>
+        </span>
+        <span className="mobile-card-headline">
+          <span>{formatCamera(photo.camera)}</span>
+          <span>{isActive ? 'Hide preview' : 'Show preview'}</span>
+        </span>
+      </button>
+
+      <div className="mobile-card-summary">
+        <span>{formatLens(photo.lens)}</span>
+        <span>{formatDimensions(photo.width, photo.height)}</span>
+      </div>
+
+      <AnimatePresence initial={false}>
+        {isActive ? (
+          <motion.div
+            className="mobile-preview"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{
+              opacity: 1,
+              height: 'auto',
+              transition: {
+                duration: 0.22,
+                ease: [0.16, 1, 0.3, 1],
+              },
+            }}
+            exit={{
+              opacity: 0,
+              height: 0,
+              transition: {
+                duration: 0.3,
+                ease: [0.22, 1, 0.36, 1],
+              },
+            }}
+          >
+            <img
+              src={`/previews/${photo.filename}`}
+              alt=""
+              className="mobile-preview-image"
+            />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      <dl className="mobile-meta">
+        <div>
+          <dt>Focal</dt>
+          <dd>{formatFocalLength(photo.focalLength, photo.focalLength35mm)}</dd>
+        </div>
+        <div>
+          <dt>Shutter</dt>
+          <dd>{formatExposure(photo.exposureTimeSeconds)}</dd>
+        </div>
+        <div>
+          <dt>Aperture</dt>
+          <dd>{formatAperture(photo.aperture)}</dd>
+        </div>
+        <div>
+          <dt>ISO</dt>
+          <dd>{formatIso(photo.iso)}</dd>
+        </div>
+        <div>
+          <dt>Flash</dt>
+          <dd>{formatFlash(photo.flashOn)}</dd>
+        </div>
+        <div>
+          <dt>WB</dt>
+          <dd>{formatWhiteBalance(photo.whiteBalance)}</dd>
+        </div>
+        <div>
+          <dt>File size</dt>
+          <dd>{formatFileSize(photo.fileSizeBytes)}</dd>
+        </div>
+        <div>
+          <dt>Filename</dt>
+          <dd>{photo.filename}</dd>
+        </div>
+      </dl>
+    </article>
+  )
+}
+
 function AssetRow({ photo, onPreviewChange }) {
   const controls = useAnimationControls()
 
@@ -177,6 +265,7 @@ function AssetRow({ photo, onPreviewChange }) {
 
 function App() {
   const [hoveredPhoto, setHoveredPhoto] = useState(null)
+  const [activeMobilePhoto, setActiveMobilePhoto] = useState(null)
 
   return (
     <main className="archive-page">
@@ -190,7 +279,10 @@ function App() {
         <p className="archive-count">{photoIndex.length} assets</p>
       </header>
 
-      <section className="archive-table-wrap" aria-label="Photography asset index">
+      <section
+        className="archive-table-wrap archive-desktop"
+        aria-label="Photography asset index"
+      >
         <table className="archive-table">
           <thead>
             <tr>
@@ -218,6 +310,21 @@ function App() {
             ))}
           </tbody>
         </table>
+      </section>
+
+      <section className="archive-mobile" aria-label="Mobile photography asset index">
+        {photoIndex.map((photo) => (
+          <MobileAssetCard
+            key={photo.filename}
+            photo={photo}
+            isActive={activeMobilePhoto === photo.filename}
+            onToggle={() =>
+              setActiveMobilePhoto((current) =>
+                current === photo.filename ? null : photo.filename,
+              )
+            }
+          />
+        ))}
       </section>
 
       <AnimatePresence>
