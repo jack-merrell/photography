@@ -1,0 +1,42 @@
+:root {
+  --font-body: 'SFMono-Regular', 'IBM Plex Mono', 'Menlo', 'Consolas', monospace;
+  font-family: var(--font-body);
+  line-height: 1.5;
+  font-weight: 400;
+  color: #f3f1ec;
+  background: #020202;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  background: #020202;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #020202;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+table {
+  border-spacing: 0;
+}
