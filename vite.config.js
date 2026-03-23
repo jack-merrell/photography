@@ -320,7 +320,13 @@ function updateCameraModel(imagePath, camera) {
 
 function updateExifMetadata(imagePath, metadata) {
   mkdirSync(swiftCachePath, { recursive: true })
-  execFileSync('swift', [swiftScriptPath, imagePath, JSON.stringify(metadata)], {
+  const exifPayload = {
+    ...metadata,
+    aiDescription:
+      metadata.aiDescription == null ? null : JSON.stringify(metadata.aiDescription),
+  }
+
+  execFileSync('swift', [swiftScriptPath, imagePath, JSON.stringify(exifPayload)], {
     encoding: 'utf8',
     env: {
       ...process.env,

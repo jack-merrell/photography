@@ -13,8 +13,11 @@ UNDO_PATH = "photo-rename-undo.sh"
 
 CAMERA_SLUG_OVERRIDES = {
   "Canon EOS 7D" => "canon-eos-7d",
+  "Canon EOS 6D" => "canon-eos-6d",
+  "Canon EOS 6D Mark II" => "canon-eos-6d-mark-ii",
   "ILCE-7CM2" => "sony-ilce-7cm2",
   "iPhone 12 Pro" => "iphone-12-pro",
+  "DMC-GF7" => "panasonic-dmc-gf7",
   "EZ Controller" => "noritsu-scan",
   "QSS-32_33" => "noritsu-scan"
 }.freeze

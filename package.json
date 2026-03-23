@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "photo:ingest": "ruby scripts/ingest_photo_batch.rb",
     "photo:index": "node scripts/build_photo_index.mjs",
     "photo:previews": "node scripts/build_photo_previews.mjs",
     "photo:describe:draft": "node scripts/generate_photo_ai_descriptions.mjs",
     "photo:describe:merge": "node scripts/merge_photo_ai_descriptions.mjs",
+    "photo:describe:publish": "node scripts/generate_photo_ai_descriptions.mjs --auto-approve && node scripts/merge_photo_ai_descriptions.mjs",
     "photo:merge:overlay": "node scripts/merge_photo_json_overlay.mjs",
     "lint": "eslint .",
     "preview": "vite preview"

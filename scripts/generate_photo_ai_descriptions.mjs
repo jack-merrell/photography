@@ -29,18 +29,20 @@ dotenv.config({ path: path.join(paths.rootDir, '.env.local'), quiet: true })
 dotenv.config({ quiet: true })
 
 function printHelp() {
-  console.log(`Usage: npm run photo:describe:draft -- [--limit=<count>] [--only=<id-or-filename,...>]
+  console.log(`Usage: npm run photo:describe:draft -- [--limit=<count>] [--only=<id-or-filename,...>] [--auto-approve]
 
 Generates draft AI descriptions for photos that do not already have finalized descriptions.
 
 Options:
   --limit=<count>            Generate at most this many new drafts
   --only=<items>             Comma-separated photo ids or filenames to target
+  --auto-approve             Mark newly generated rows as approved before writing the draft file
   --help                     Show this help message`)
 }
 
 function parseArgs(argv) {
   const args = {
+    autoApprove: false,
     limit: null,
     only: new Set(),
     help: false,
@@ -49,6 +51,11 @@ function parseArgs(argv) {
   for (const arg of argv) {
     if (arg === '--help') {
       args.help = true
+      continue
+    }
+
+    if (arg === '--auto-approve') {
+      args.autoApprove = true
       continue
     }
 
@@ -105,6 +112,17 @@ function sortDraftRows(draftRows, photoPositionByFilename) {
       (photoPositionByFilename.get(left.filename) ?? Number.MAX_SAFE_INTEGER) -
       (photoPositionByFilename.get(right.filename) ?? Number.MAX_SAFE_INTEGER),
   )
+}
+
+function normalizeGeneratedAiDescription(aiDescription, { autoApprove }) {
+  if (!autoApprove) {
+    return aiDescription
+  }
+
+  return {
+    ...aiDescription,
+    reviewStatus: 'approved',
+  }
 }
 
 async function describePhoto(client, photo, imagePath) {
@@ -245,7 +263,10 @@ async function main() {
       `[${index + 1}/${photosToGenerate.length}] Generating draft for ${photo.filename}`,
     )
 
-    const aiDescription = await describePhoto(client, photo, imagePath)
+    const aiDescription = normalizeGeneratedAiDescription(
+      await describePhoto(client, photo, imagePath),
+      { autoApprove: args.autoApprove },
+    )
     draftRows.set(photo.filename, createDraftPhotoDescriptionRow(photo, aiDescription))
 
     writeJsonFile(
