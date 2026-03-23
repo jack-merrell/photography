@@ -1,10 +1,31 @@
+import { useEffect, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import photoIndex from '../data/photoIndex.json'
 import './PeopleCollagePage.css'
 
+const MotionAside = motion.aside
+const MotionButton = motion.button
+const MotionDiv = motion.div
+
 const PERSON_LABEL_PATTERN =
   /\b(person|man|woman|child|children|girl|boy|crowd|pedestrian|worker|musician|group)\b/i
 const EXCLUDED_LABEL_PATTERN = /\b(painted|mural|stencil|sculptural|statue)\b/i
+
+const LIGHTBOX_LAYOUT_TRANSITION = {
+  duration: 0.55,
+  ease: [0.16, 1, 0.3, 1],
+}
+
+const LIGHTBOX_OPEN_TRANSITION = {
+  duration: 0.48,
+  ease: [0.16, 1, 0.3, 1],
+}
+
+const LIGHTBOX_CLOSE_TRANSITION = {
+  duration: 0.34,
+  ease: [0.22, 1, 0.36, 1],
+}
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max)
@@ -96,6 +117,30 @@ function getTileStyle(item) {
 export default function PeopleCollagePage() {
   const collageItems = createCollageItems(photoIndex)
   const sourcePhotoCount = new Set(collageItems.map((item) => item.filename)).size
+  const [activeItemId, setActiveItemId] = useState(null)
+  const activeItem = collageItems.find((item) => item.id === activeItemId) ?? null
+
+  useEffect(() => {
+    if (!activeItem) {
+      return undefined
+    }
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setActiveItemId(null)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [activeItem])
 
   return (
     <main className="people-collage-page">
@@ -123,25 +168,100 @@ export default function PeopleCollagePage() {
 
       <section className="people-collage-grid">
         {collageItems.map((item) => (
-          <article
-            className={`people-collage-tile people-collage-tile-${item.emphasis}`}
+          <MotionButton
+            className={`people-collage-tile people-collage-tile-button people-collage-tile-${item.emphasis}`}
             key={item.id}
+            onClick={() => setActiveItemId(item.id)}
             style={getTileStyle(item)}
+            type="button"
+            whileHover={{ y: -2 }}
+            whileTap={{ scale: 0.995 }}
           >
-            <div className="people-collage-frame">
+            <MotionDiv
+              className="people-collage-frame people-collage-frame-tile"
+              layoutId={`people-collage-frame-${item.id}`}
+              transition={LIGHTBOX_LAYOUT_TRANSITION}
+            >
               <img
                 alt={`${item.label} crop from ${item.filename}`}
-                className="people-collage-image"
+                className="people-collage-image people-collage-image-tile"
                 src={`/previews/${item.filename}`}
               />
-            </div>
+            </MotionDiv>
             <div className="people-collage-meta">
               <p className="people-collage-label">{item.label}</p>
               <p className="people-collage-file">{item.photo.id}</p>
             </div>
-          </article>
+          </MotionButton>
         ))}
       </section>
+
+      <AnimatePresence initial={false}>
+        {activeItem ? (
+          <>
+            <MotionButton
+              aria-label="Close enlarged image"
+              className="people-collage-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: LIGHTBOX_OPEN_TRANSITION }}
+              exit={{ opacity: 0, transition: LIGHTBOX_CLOSE_TRANSITION }}
+              onClick={() => setActiveItemId(null)}
+              type="button"
+            />
+
+            <MotionAside
+              aria-label="Enlarged image viewer"
+              className="people-collage-lightbox"
+              initial={{ opacity: 0, scale: 0.985 }}
+              animate={{
+                opacity: 1,
+                scale: 1,
+                transition: LIGHTBOX_OPEN_TRANSITION,
+              }}
+              exit={{
+                opacity: 0,
+                scale: 0.99,
+                transition: LIGHTBOX_CLOSE_TRANSITION,
+              }}
+              role="dialog"
+              aria-modal="true"
+            >
+              <MotionDiv className="people-collage-lightbox-card">
+                <div className="people-collage-lightbox-stage">
+                  <MotionDiv
+                    className="people-collage-frame people-collage-frame-lightbox"
+                    layoutId={`people-collage-frame-${activeItem.id}`}
+                    transition={LIGHTBOX_LAYOUT_TRANSITION}
+                  >
+                    <img
+                      alt={`${activeItem.label} from ${activeItem.filename}`}
+                      className="people-collage-image people-collage-image-lightbox"
+                      src={`/previews/${activeItem.filename}`}
+                    />
+                  </MotionDiv>
+                </div>
+
+                <div className="people-collage-lightbox-meta">
+                  <div>
+                    <p className="people-collage-lightbox-label">{activeItem.label}</p>
+                    <p className="people-collage-lightbox-file">{activeItem.photo.id}</p>
+                  </div>
+
+                  <MotionButton
+                    className="people-collage-lightbox-close"
+                    onClick={() => setActiveItemId(null)}
+                    type="button"
+                    whileHover={{ y: -1 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    Close
+                  </MotionButton>
+                </div>
+              </MotionDiv>
+            </MotionAside>
+          </>
+        ) : null}
+      </AnimatePresence>
     </main>
   )
 }

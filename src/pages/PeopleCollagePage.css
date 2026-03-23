@@ -69,18 +69,51 @@
   margin: 0 0 8px;
 }
 
+.people-collage-tile-button {
+  width: 100%;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.people-collage-tile-button:focus-visible .people-collage-frame {
+  outline: 2px solid rgba(255, 207, 92, 0.85);
+  outline-offset: 2px;
+}
+
 .people-collage-frame {
   position: relative;
   overflow: hidden;
-  aspect-ratio: var(--tile-aspect-ratio);
   border: 1px solid rgba(243, 241, 236, 0.12);
   background: rgba(255, 255, 255, 0.02);
   box-shadow:
     0 14px 34px rgba(0, 0, 0, 0.32),
     0 0 0 1px rgba(243, 241, 236, 0.04) inset;
+  will-change: transform, width, height, left, top;
+}
+
+.people-collage-frame-tile {
+  aspect-ratio: var(--tile-aspect-ratio);
+}
+
+.people-collage-frame-lightbox {
+  width: min(94vw, 1320px);
+  height: min(88vh, 920px);
 }
 
 .people-collage-image {
+  display: block;
+  filter: saturate(0.94) contrast(1.02);
+}
+
+.people-collage-image-tile {
   position: absolute;
   width: var(--image-width);
   height: var(--image-height);
@@ -88,7 +121,92 @@
   top: var(--image-top);
   max-width: none;
   object-fit: fill;
+}
+
+.people-collage-image-lightbox {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   filter: saturate(0.94) contrast(1.02);
+}
+
+.people-collage-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  border: 0;
+  padding: 0;
+  background:
+    radial-gradient(circle at center, rgba(255, 207, 92, 0.08), transparent 36%),
+    rgba(0, 0, 0, 0.74);
+  cursor: pointer;
+}
+
+.people-collage-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 41;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(14px, 2.8vw, 34px);
+  pointer-events: none;
+}
+
+.people-collage-lightbox-card {
+  width: min(94vw, 1320px);
+  height: min(88vh, 920px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: auto;
+}
+
+.people-collage-lightbox-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.people-collage-lightbox-stage .people-collage-frame-lightbox {
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.05), transparent 38%),
+    rgba(8, 8, 8, 0.96);
+  box-shadow:
+    0 38px 100px rgba(0, 0, 0, 0.52),
+    0 0 0 1px rgba(243, 241, 236, 0.05) inset;
+}
+
+.people-collage-lightbox-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 0 2px;
+}
+
+.people-collage-lightbox-label {
+  margin: 0 0 4px;
+  color: #f3f1ec;
+  font-size: 0.84rem;
+}
+
+.people-collage-lightbox-file {
+  margin: 0;
+  color: rgba(243, 241, 236, 0.64);
+  font-size: 0.62rem;
+}
+
+.people-collage-lightbox-close {
+  border: 1px solid rgba(243, 241, 236, 0.16);
+  background: rgba(243, 241, 236, 0.02);
+  color: #f3f1ec;
+  font: inherit;
+  font-size: 0.62rem;
+  padding: 7px 10px;
+  cursor: pointer;
 }
 
 .people-collage-meta {
@@ -134,5 +252,28 @@
 
   .people-collage-tile {
     margin-bottom: 6px;
+  }
+
+  .people-collage-lightbox {
+    padding: 10px;
+  }
+
+  .people-collage-lightbox-card {
+    width: 100%;
+    height: min(86vh, 760px);
+    gap: 10px;
+  }
+
+  .people-collage-frame-lightbox {
+    width: 100%;
+    height: 100%;
+  }
+
+  .people-collage-lightbox-meta {
+    align-items: center;
+  }
+
+  .people-collage-lightbox-label {
+    font-size: 0.74rem;
   }
 }
