@@ -32,7 +32,7 @@ function ordinal(day) {
   }
 }
 
-export function formatDate(timestamp) {
+export function getFormattedDateParts(timestamp) {
   const date = new Date(timestamp.replace(' +0000', 'Z'))
   const month = new Intl.DateTimeFormat('en-GB', {
     month: 'long',
@@ -42,7 +42,21 @@ export function formatDate(timestamp) {
     year: 'numeric',
     timeZone: 'UTC',
   }).format(date)
-  return `${ordinal(date.getUTCDate())} ${month} ${year}`
+  const dayWithOrdinal = ordinal(date.getUTCDate())
+  const day = dayWithOrdinal.match(/^\d+/)?.[0] ?? String(date.getUTCDate())
+  const suffix = dayWithOrdinal.slice(day.length)
+
+  return {
+    day,
+    suffix,
+    month,
+    year,
+  }
+}
+
+export function formatDate(timestamp) {
+  const { day, suffix, month, year } = getFormattedDateParts(timestamp)
+  return `${day}${suffix} ${month} ${year}`
 }
 
 export function formatTime(timestamp) {
@@ -118,6 +132,33 @@ export function formatGps(latitude, longitude) {
   }
 
   return `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
+}
+
+export function formatLocationCode(value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    return '—'
+  }
+
+  return value.trim().toUpperCase()
+}
+
+export function formatLocationPair(countryCode, cityCode) {
+  const formattedCountryCode = formatLocationCode(countryCode)
+  const formattedCityCode = formatLocationCode(cityCode)
+
+  if (formattedCountryCode === '—' && formattedCityCode === '—') {
+    return '—'
+  }
+
+  if (formattedCountryCode === '—') {
+    return formattedCityCode
+  }
+
+  if (formattedCityCode === '—') {
+    return formattedCountryCode
+  }
+
+  return `${formattedCountryCode} / ${formattedCityCode}`
 }
 
 export function formatWhiteBalance(value) {

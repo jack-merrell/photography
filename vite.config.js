@@ -118,6 +118,26 @@ function normalizeAiDescription(rawValue) {
   }
 }
 
+function toAsciiLocationCode(rawValue, label) {
+  const text = normalizeOptionalText(rawValue)
+  if (!text) {
+    return null
+  }
+
+  const normalized = text
+    .normalize('NFKD')
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
+    .replace(/[\s-]+/g, ' ')
+    .trim()
+  const lettersOnly = normalized.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+
+  if (!lettersOnly) {
+    throw new RequestError(400, `${label} must contain letters or numbers.`)
+  }
+
+  return lettersOnly.slice(0, 3)
+}
+
 function normalizeOptionalInteger(rawValue, label, { minimum = null, maximum = null } = {}) {
   if (rawValue == null || rawValue === '') {
     return null
@@ -216,6 +236,18 @@ function normalizeMetadataFields(fields, currentEntry) {
     maximum: 360,
     precision: 6,
   })
+  const locationCountryCode = toAsciiLocationCode(
+    fields.locationCountryCode ?? currentEntry.locationCountryCode,
+    'CC',
+  )
+  const locationCityCode = toAsciiLocationCode(
+    fields.locationCityCode ?? currentEntry.locationCityCode,
+    'City',
+  )
+  const locationCountryName = normalizeOptionalText(
+    fields.locationCountryName ?? currentEntry.locationCountryName,
+  )
+  const locationCity = normalizeOptionalText(fields.locationCity ?? currentEntry.locationCity)
   const aiDescription = normalizeAiDescription(fields.aiDescription)
 
   if ((latitude == null) !== (longitude == null)) {
@@ -242,9 +274,27 @@ function normalizeMetadataFields(fields, currentEntry) {
     longitude,
     altitude,
     imageDirection,
+    locationCountryCode,
+    locationCountryName,
+    locationCity,
+    locationCityCode,
     aiDescription,
   }
 }
+
+const reverseGeocodeLocalityFields = [
+  'city',
+  'town',
+  'village',
+  'municipality',
+  'city_district',
+  'suburb',
+  'borough',
+  'hamlet',
+  'county',
+  'state_district',
+  'state',
+]
 
 async function fetchElevationFromOpenTopoData(latitude, longitude) {
   const locations = `${latitude},${longitude}`
@@ -267,6 +317,51 @@ async function fetchElevationFromOpenTopoData(latitude, longitude) {
   }
 
   return Number(elevation.toFixed(2))
+}
+
+function pickReverseGeocodeLocalityName(address) {
+  for (const field of reverseGeocodeLocalityFields) {
+    const value = normalizeOptionalText(address?.[field])
+    if (value) {
+      return value
+    }
+  }
+
+  return null
+}
+
+async function fetchLocationCodes(latitude, longitude) {
+  const url = new URL('https://nominatim.openstreetmap.org/reverse')
+  url.searchParams.set('format', 'jsonv2')
+  url.searchParams.set('lat', String(latitude))
+  url.searchParams.set('lon', String(longitude))
+  url.searchParams.set('addressdetails', '1')
+  url.searchParams.set('zoom', '10')
+  url.searchParams.set('accept-language', 'en')
+
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'mac-keller-jr-photography/1.0 (metadata editor location lookup)',
+      Accept: 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Location lookup failed with status ${response.status}.`)
+  }
+
+  const payload = await response.json()
+  const address = payload?.address ?? {}
+  const locationCity = pickReverseGeocodeLocalityName(address)
+  const locationCountryName = normalizeOptionalText(address.country)
+  const rawCountryCode = normalizeOptionalText(address.country_code)
+
+  return {
+    locationCity,
+    locationCityCode: toAsciiLocationCode(locationCity, 'City'),
+    locationCountryName,
+    locationCountryCode: rawCountryCode ? rawCountryCode.toUpperCase() : null,
+  }
 }
 
 function applyMetadataToPhotoEntry(currentEntry, metadata) {
@@ -294,6 +389,10 @@ function applyMetadataToPhotoEntry(currentEntry, metadata) {
     geotagSource:
       metadata.latitude != null && metadata.longitude != null ? 'exif' : null,
     geotagUpdatedAt: null,
+    locationCountryCode: metadata.locationCountryCode,
+    locationCountryName: metadata.locationCountryName,
+    locationCity: metadata.locationCity,
+    locationCityCode: metadata.locationCityCode,
   }
 }
 
@@ -419,6 +518,42 @@ function photoIndexMetadataApi() {
               error instanceof Error
                 ? error.message
                 : 'Unable to fetch altitude from the elevation service.',
+          })
+        }
+      })
+
+      server.middlewares.use('/api/location-codes', async (request, response, next) => {
+        if (request.method !== 'GET') {
+          next()
+          return
+        }
+
+        try {
+          const url = new URL(request.originalUrl ?? request.url ?? '', 'http://localhost')
+          const latitude = normalizeCoordinate(url.searchParams.get('lat'), -90, 90, 'Latitude')
+          const longitude = normalizeCoordinate(
+            url.searchParams.get('lng'),
+            -180,
+            180,
+            'Longitude',
+          )
+          const location = await fetchLocationCodes(latitude, longitude)
+
+          writeJson(response, 200, {
+            ...location,
+            source: 'Nominatim',
+          })
+        } catch (error) {
+          if (error instanceof RequestError) {
+            writeJson(response, error.statusCode, { error: error.message })
+            return
+          }
+
+          writeJson(response, 502, {
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Unable to fetch location codes from the reverse geocoder.',
           })
         }
       })

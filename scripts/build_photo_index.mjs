@@ -138,6 +138,13 @@ function readExistingPhotoData() {
           whiteBalance:
             typeof entry.whiteBalance === 'number' ? entry.whiteBalance : null,
           aiDescription: entry.aiDescription ?? null,
+          locationCountryCode:
+            typeof entry.locationCountryCode === 'string' ? entry.locationCountryCode : null,
+          locationCountryName:
+            typeof entry.locationCountryName === 'string' ? entry.locationCountryName : null,
+          locationCity: typeof entry.locationCity === 'string' ? entry.locationCity : null,
+          locationCityCode:
+            typeof entry.locationCityCode === 'string' ? entry.locationCityCode : null,
           latitude: getCoordinateValue(entry.latitude),
           longitude: getCoordinateValue(entry.longitude),
           altitude: typeof entry.altitude === 'number' ? entry.altitude : null,
@@ -255,6 +262,10 @@ function createIndexEntry(row, index, existingPhotoDataByFilename) {
     width: Number(row.width),
     height: Number(row.height),
     aiDescription: existingPhotoData?.aiDescription ?? null,
+    locationCountryCode: existingPhotoData?.locationCountryCode ?? null,
+    locationCountryName: existingPhotoData?.locationCountryName ?? null,
+    locationCity: existingPhotoData?.locationCity ?? null,
+    locationCityCode: existingPhotoData?.locationCityCode ?? null,
   }
 }
 

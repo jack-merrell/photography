@@ -7,9 +7,10 @@ import './PeopleCollagePage.css'
 const MotionAside = motion.aside
 const MotionButton = motion.button
 const MotionDiv = motion.div
+const MotionImg = motion.img
 
 const PERSON_LABEL_PATTERN =
-  /\b(person|man|woman|child|children|girl|boy|crowd|pedestrian|worker|musician|group)\b/i
+  /\b(person|people|man|men|woman|women|child|children|girl|boy|crowd|pedestrian|passerby|walker|cyclist|rider|driver|passenger|worker|musician|vendor|server|butcher|fishmonger|guard|officer|player|artist|shopper|customer|student|teacher|figure|figures|selfie|street musician|street artist|group)\b/i
 const EXCLUDED_LABEL_PATTERN = /\b(painted|mural|stencil|sculptural|statue)\b/i
 
 const LIGHTBOX_LAYOUT_TRANSITION = {
@@ -49,8 +50,8 @@ function isHumanAnnotation(annotation) {
 }
 
 function expandCrop(annotation) {
-  const paddingX = clamp(annotation.width * 0.28, 0.04, 0.14)
-  const paddingY = clamp(annotation.height * 0.22, 0.04, 0.14)
+  const paddingX = clamp(annotation.width * 0.12, 0.03, 0.08)
+  const paddingY = clamp(annotation.height * 0.1, 0.03, 0.08)
   const x = clamp(annotation.x - paddingX, 0, 1)
   const y = clamp(annotation.y - paddingY, 0, 1)
   const right = clamp(annotation.x + annotation.width + paddingX, 0, 1)
@@ -189,15 +190,13 @@ export default function PeopleCollagePage() {
             whileHover={{ y: -2 }}
             whileTap={{ scale: 0.995 }}
           >
-            <MotionDiv
-              className="people-collage-frame people-collage-frame-tile"
-              layoutId={`people-collage-frame-${item.id}`}
-              transition={LIGHTBOX_LAYOUT_TRANSITION}
-            >
-              <img
+            <MotionDiv className="people-collage-frame people-collage-frame-tile">
+              <MotionImg
                 alt={`${item.label} crop from ${item.filename}`}
                 className="people-collage-image people-collage-image-tile"
+                layoutId={`people-collage-image-${item.id}`}
                 src={`/previews/${item.filename}`}
+                transition={LIGHTBOX_LAYOUT_TRANSITION}
               />
             </MotionDiv>
             <div className="people-collage-meta">
@@ -240,15 +239,13 @@ export default function PeopleCollagePage() {
             >
               <MotionDiv className="people-collage-lightbox-card">
                 <div className="people-collage-lightbox-stage">
-                  <MotionDiv
-                    className="people-collage-frame people-collage-frame-lightbox"
-                    layoutId={`people-collage-frame-${activeItem.id}`}
-                    transition={LIGHTBOX_LAYOUT_TRANSITION}
-                  >
-                    <img
+                  <MotionDiv className="people-collage-frame people-collage-frame-lightbox">
+                    <MotionImg
                       alt={`${activeItem.label} from ${activeItem.filename}`}
                       className="people-collage-image people-collage-image-lightbox"
+                      layoutId={`people-collage-image-${activeItem.id}`}
                       src={`/previews/${activeItem.filename}`}
+                      transition={LIGHTBOX_LAYOUT_TRANSITION}
                     />
                   </MotionDiv>
                 </div>

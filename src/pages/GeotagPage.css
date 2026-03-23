@@ -180,6 +180,7 @@
 .geotag-photo-stage {
   position: relative;
   width: min(100%, 78%);
+  cursor: default;
 }
 
 .geotag-photo-image {
@@ -197,10 +198,27 @@
 
 .geotag-landmark {
   position: absolute;
+  pointer-events: auto;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  touch-action: none;
 }
 
 .geotag-landmark-point {
   transform: translate(-50%, -50%);
+  cursor: grab;
+}
+
+.geotag-landmark-point:active,
+.geotag-landmark-box:active {
+  cursor: grabbing;
 }
 
 .geotag-landmark-dot {
@@ -227,12 +245,157 @@
 }
 
 .geotag-landmark-box {
+  cursor: move;
   border: 2px solid rgba(var(--geotag-accent-rgb), 0.92);
   box-shadow: inset 0 0 0 1px rgba(16, 16, 16, 0.32);
+  background: rgba(var(--geotag-accent-rgb), 0.02);
 }
 
 .geotag-landmark-box .geotag-landmark-label {
   transform: translate(0, -100%);
+}
+
+.geotag-landmark-selected {
+  z-index: 2;
+}
+
+.geotag-landmark:focus-visible,
+.geotag-landmark-chip:focus-visible {
+  outline: 2px solid rgba(var(--geotag-accent-rgb), 0.85);
+  outline-offset: 2px;
+}
+
+.geotag-landmark-selected .geotag-landmark-dot {
+  box-shadow:
+    0 0 0 1px rgba(var(--geotag-accent-rgb), 0.3),
+    0 0 0 5px rgba(var(--geotag-accent-rgb), 0.16);
+}
+
+.geotag-landmark-hitarea {
+  position: absolute;
+  inset: -12px;
+}
+
+.geotag-landmark-resize-handle {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgba(16, 16, 16, 0.88);
+  background: var(--geotag-accent);
+  box-shadow: 0 0 0 1px rgba(var(--geotag-accent-rgb), 0.36);
+  cursor: nwse-resize;
+}
+
+.geotag-landmark-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(243, 241, 236, 0.08);
+}
+
+.geotag-landmark-editor-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.geotag-landmark-editor-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.geotag-landmark-editor-title {
+  margin: 4px 0 0;
+  font-weight: 400;
+}
+
+.geotag-landmark-editor-count {
+  white-space: nowrap;
+  color: rgba(243, 241, 236, 0.58);
+}
+
+.geotag-landmark-action {
+  padding: 7px 9px;
+}
+
+.geotag-landmark-editor-body {
+  display: grid;
+  gap: 10px;
+}
+
+.geotag-landmark-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.geotag-landmark-chip {
+  border: 1px solid rgba(243, 241, 236, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(243, 241, 236, 0.78);
+  padding: 7px 9px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+  font: inherit;
+}
+
+.geotag-landmark-chip span:last-child {
+  color: rgba(243, 241, 236, 0.48);
+}
+
+.geotag-landmark-chip-selected {
+  border-color: rgba(var(--geotag-accent-rgb), 0.52);
+  background: rgba(var(--geotag-accent-rgb), 0.08);
+  color: #f3f1ec;
+}
+
+.geotag-landmark-inspector {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(var(--geotag-accent-rgb), 0.16);
+  background: rgba(var(--geotag-accent-rgb), 0.03);
+}
+
+.geotag-landmark-inspector-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.geotag-landmark-inspector-head strong {
+  font-weight: 400;
+  color: #f3f1ec;
+}
+
+.geotag-landmark-confidence {
+  margin: 0;
+  color: rgba(243, 241, 236, 0.58);
+}
+
+.geotag-landmark-coordinates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.geotag-landmark-tip {
+  margin: 0;
+  color: rgba(243, 241, 236, 0.62);
+}
+
+.geotag-landmark-empty {
+  margin: 0;
 }
 
 .geotag-map-shell {
@@ -288,6 +451,11 @@
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.geotag-gps-actions .geotag-button {
+  flex: 1 1 0;
+  justify-content: center;
 }
 
 .geotag-danger-zone {
@@ -553,6 +721,15 @@
   }
 
   .geotag-gps-form {
+    grid-template-columns: 1fr;
+  }
+
+  .geotag-landmark-editor-header,
+  .geotag-landmark-inspector-head {
+    flex-direction: column;
+  }
+
+  .geotag-landmark-coordinates {
     grid-template-columns: 1fr;
   }
 

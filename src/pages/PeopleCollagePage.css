@@ -22,7 +22,8 @@
 .people-collage-count,
 .people-collage-file {
   margin: 0;
-  color: rgba(243, 241, 236, 0.62);
+  color: rgba(243, 241, 236, 0.5);
+  line-height: 1.175;
 }
 
 .people-collage-kicker,
@@ -31,7 +32,7 @@
 .people-collage-file,
 .people-collage-link,
 .people-collage-label {
-  font-size: 0.62rem;
+  font-size: 0.54rem;
 }
 
 .people-collage-title {
@@ -197,12 +198,14 @@
   margin: 0 0 4px;
   color: #f3f1ec;
   font-size: 0.84rem;
+  line-height: 1.1;
 }
 
 .people-collage-lightbox-file {
   margin: 0;
   color: rgba(243, 241, 236, 0.64);
   font-size: 0.62rem;
+  line-height: 1.1;
 }
 
 .people-collage-lightbox-close {
@@ -235,6 +238,8 @@
 .people-collage-label {
   margin: 0;
   color: #f3f1ec;
+  font-size: 0.54rem;
+  line-height: 1.05;
 }
 
 .people-collage-tile-hero .people-collage-frame {
@@ -291,5 +296,10 @@
 
   .people-collage-lightbox-label {
     font-size: 0.74rem;
+  }
+
+  .people-collage-label {
+    font-size: 0.46rem;
+    line-height: 1.02;
   }
 }

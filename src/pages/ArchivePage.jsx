@@ -12,8 +12,11 @@ import {
   formatFlash,
   formatFocalLength,
   formatGps,
+  getFormattedDateParts,
   formatIso,
   formatLens,
+  formatLocationCode,
+  formatLocationPair,
   formatTime,
 } from '../lib/photoFormatters'
 import '../App.css'
@@ -21,6 +24,17 @@ import '../App.css'
 const MotionButton = motion.button
 const MotionAside = motion.aside
 const MotionTableRow = motion.tr
+
+function SuperscriptDate({ timestamp }) {
+  const { day, suffix, month, year } = getFormattedDateParts(timestamp)
+
+  return (
+    <>
+      {day}
+      <sup>{suffix}</sup> {month} {year}
+    </>
+  )
+}
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max)
@@ -163,6 +177,10 @@ function MobileDetailSheet({ canGoNext, canGoPrevious, onClose, onNext, onPrevio
             <dd>{formatGps(photo.latitude, photo.longitude)}</dd>
           </div>
           <div>
+            <dt>Location</dt>
+            <dd>{formatLocationPair(photo.locationCountryCode, photo.locationCityCode)}</dd>
+          </div>
+          <div>
             <dt>Lens</dt>
             <dd>{formatLens(photo.lens)}</dd>
           </div>
@@ -250,9 +268,13 @@ function AssetRow({ photo, onPreviewChange, onSelectPhoto }) {
       }}
     >
       <td>{photo.id}</td>
-      <td>{formatDate(photo.captureTimestamp)}</td>
+      <td>
+        <SuperscriptDate timestamp={photo.captureTimestamp} />
+      </td>
       <td>{formatTime(photo.captureTimestamp)}</td>
       <td>{formatGps(photo.latitude, photo.longitude)}</td>
+      <td>{formatLocationCode(photo.locationCountryCode)}</td>
+      <td>{formatLocationCode(photo.locationCityCode)}</td>
       <td>{formatCamera(photo.camera)}</td>
       <td>{formatLens(photo.lens)}</td>
       <td>{formatFocalLength(photo.focalLength, photo.focalLength35mm)}</td>
@@ -346,6 +368,8 @@ export default function ArchivePage() {
               <th scope="col">Date</th>
               <th scope="col">Time</th>
               <th scope="col">GPS</th>
+              <th scope="col">CC</th>
+              <th scope="col">City</th>
               <th scope="col">Camera</th>
               <th scope="col">Lens</th>
               <th scope="col">Focal</th>

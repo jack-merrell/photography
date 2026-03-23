@@ -104,12 +104,15 @@
 
 .archive-table th:nth-child(2),
 .archive-table td:nth-child(2) {
-  min-width: 148px;
+  min-width: 134px;
+  padding-right: 2px;
 }
 
 .archive-table th:nth-child(3),
 .archive-table td:nth-child(3) {
-  min-width: 78px;
+  min-width: 54px;
+  padding-left: 2px;
+  padding-right: 4px;
 }
 
 .archive-table th:nth-child(4),
@@ -121,26 +124,35 @@
 .archive-table td:nth-child(5),
 .archive-table th:nth-child(6),
 .archive-table td:nth-child(6) {
-  min-width: 126px;
+  min-width: 32px;
+  padding-left: 4px;
+  padding-right: 4px;
 }
 
 .archive-table th:nth-child(7),
 .archive-table td:nth-child(7),
+.archive-table th:nth-child(8),
+.archive-table td:nth-child(8) {
+  min-width: 126px;
+}
+
+.archive-table th:nth-child(9),
+.archive-table td:nth-child(9),
+.archive-table th:nth-child(14),
+.archive-table td:nth-child(14),
+.archive-table th:nth-child(15),
+.archive-table td:nth-child(15) {
+  min-width: 96px;
+}
+
+.archive-table th:nth-child(10),
+.archive-table td:nth-child(10),
+.archive-table th:nth-child(11),
+.archive-table td:nth-child(11),
 .archive-table th:nth-child(12),
 .archive-table td:nth-child(12),
 .archive-table th:nth-child(13),
 .archive-table td:nth-child(13) {
-  min-width: 96px;
-}
-
-.archive-table th:nth-child(8),
-.archive-table td:nth-child(8),
-.archive-table th:nth-child(9),
-.archive-table td:nth-child(9),
-.archive-table th:nth-child(10),
-.archive-table td:nth-child(10),
-.archive-table th:nth-child(11),
-.archive-table td:nth-child(11) {
   min-width: 68px;
 }
 

@@ -17,6 +17,7 @@ import './GeotagPage.css'
 const DEFAULT_CENTER = [20, 0]
 const DEFAULT_ZOOM = 2
 const DETAIL_ZOOM = 12
+const MAX_LANDMARK_ANNOTATIONS = 8
 
 delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({
@@ -27,6 +28,10 @@ L.Icon.Default.mergeOptions({
 
 function roundCoordinate(value) {
   return Number(value.toFixed(6))
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max)
 }
 
 function isFiniteCoordinate(value) {
@@ -139,6 +144,85 @@ function getLandmarkAnnotations(aiDescription) {
   })
 }
 
+function cloneLandmarkAnnotation(annotation) {
+  return {
+    ...annotation,
+  }
+}
+
+function cloneAiDescription(aiDescription) {
+  return {
+    ...aiDescription,
+    landmarkAnnotations: Array.isArray(aiDescription.landmarkAnnotations)
+      ? aiDescription.landmarkAnnotations.map(cloneLandmarkAnnotation)
+      : [],
+  }
+}
+
+function clampNormalizedCoordinate(value) {
+  return Number(clamp(value, 0, 1).toFixed(4))
+}
+
+function percentToNormalizedCoordinate(rawValue) {
+  const text = String(rawValue).trim()
+  if (!text) {
+    return null
+  }
+
+  const numericValue = Number(text)
+  if (!Number.isFinite(numericValue)) {
+    return null
+  }
+
+  return clampNormalizedCoordinate(numericValue / 100)
+}
+
+function normalizedToPercentLabel(value) {
+  return Number((value * 100).toFixed(1))
+}
+
+function stringifyAiDescriptionValue(value) {
+  return JSON.stringify(value, null, 2)
+}
+
+function createSafeLandmarkBox(annotation, nextBox) {
+  return {
+    ...annotation,
+    x: clampNormalizedCoordinate(nextBox.x),
+    y: clampNormalizedCoordinate(nextBox.y),
+    width: clampNormalizedCoordinate(nextBox.width),
+    height: clampNormalizedCoordinate(nextBox.height),
+  }
+}
+
+function createDefaultLandmarkAnnotation(kind, index) {
+  const offset = (index % 4) * 0.05
+  const baseX = clampNormalizedCoordinate(0.42 + offset)
+  const baseY = clampNormalizedCoordinate(0.42 + Math.floor(index / 4) * 0.05)
+
+  if (kind === 'point') {
+    return {
+      label: 'new landmark',
+      kind: 'point',
+      x: baseX,
+      y: baseY,
+      width: null,
+      height: null,
+      confidence: 0.5,
+    }
+  }
+
+  return {
+    label: 'new landmark',
+    kind: 'box',
+    x: baseX,
+    y: baseY,
+    width: 0.18,
+    height: 0.18,
+    confidence: 0.5,
+  }
+}
+
 function createMetadataDraft(photo) {
   return {
     captureTimestamp: formatTimestampForInput(photo.captureTimestamp),
@@ -156,6 +240,10 @@ function createMetadataDraft(photo) {
     longitude: draftValue(photo.longitude),
     altitude: draftValue(photo.altitude),
     imageDirection: draftValue(photo.imageDirection),
+    locationCountryCode: draftValue(photo.locationCountryCode),
+    locationCountryName: draftValue(photo.locationCountryName),
+    locationCity: draftValue(photo.locationCity),
+    locationCityCode: draftValue(photo.locationCityCode),
     aiDescription: stringifyAiDescription(photo.aiDescription),
   }
 }
@@ -240,6 +328,33 @@ function parsePreviewCoordinates(latitudeRawValue, longitudeRawValue) {
   }
 }
 
+function getPhotoIdFromHash(hash) {
+  if (!hash) {
+    return null
+  }
+
+  const value = hash.replace(/^#/, '').trim()
+  return value || null
+}
+
+function formatPhotoHash(photoId) {
+  return `#${photoId}`
+}
+
+function getInitialPhotoIndex(photos) {
+  if (typeof window === 'undefined') {
+    return 0
+  }
+
+  const photoIdFromHash = getPhotoIdFromHash(window.location.hash)
+  if (!photoIdFromHash) {
+    return 0
+  }
+
+  const nextIndex = photos.findIndex((entry) => entry.id === photoIdFromHash)
+  return nextIndex === -1 ? 0 : nextIndex
+}
+
 function RecenterMap({ center, zoom }) {
   const map = useMap()
 
@@ -262,10 +377,14 @@ function MapClickHandler({ onSelect }) {
 
 export default function GeotagPage() {
   const [photoEntries, setPhotoEntries] = useState(() => photoIndex)
-  const [currentIndex, setCurrentIndex] = useState(0)
-  const [metadataDraft, setMetadataDraft] = useState(() => createMetadataDraft(photoIndex[0]))
+  const initialPhotoIndex = getInitialPhotoIndex(photoIndex)
+  const [currentIndex, setCurrentIndex] = useState(() => initialPhotoIndex)
+  const [metadataDraft, setMetadataDraft] = useState(() =>
+    createMetadataDraft(photoIndex[initialPhotoIndex]),
+  )
   const [isSaving, setIsSaving] = useState(false)
   const [isFetchingAltitude, setIsFetchingAltitude] = useState(false)
+  const [isFetchingLocationCodes, setIsFetchingLocationCodes] = useState(false)
   const [manualGpsLookupVersion, setManualGpsLookupVersion] = useState(0)
   const [destructiveUnlockValue, setDestructiveUnlockValue] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
@@ -274,6 +393,8 @@ export default function GeotagPage() {
   const lastManualGpsLookupVersionRef = useRef(0)
   const lastAutoSaveSnapshotRef = useRef('')
   const mapRef = useRef(null)
+  const photoStageRef = useRef(null)
+  const landmarkInteractionRef = useRef(null)
 
   const currentPhoto = photoEntries[currentIndex]
   const currentPhotoFilenameRef = useRef(currentPhoto.filename)
@@ -328,6 +449,11 @@ export default function GeotagPage() {
       : aiDescriptionValue
         ? 'Loaded'
         : 'Empty'
+  const [selectedLandmarkIndex, setSelectedLandmarkIndex] = useState(null)
+  const selectedLandmark =
+    selectedLandmarkIndex == null ? null : landmarkAnnotations[selectedLandmarkIndex] ?? null
+  const canEditLandmarks = Boolean(aiDescriptionValue) && !aiDescriptionPreview.error
+  const canAddLandmarks = canEditLandmarks && landmarkAnnotations.length < MAX_LANDMARK_ANNOTATIONS
   const previewCoordinates = previewResult.coordinates ?? currentCoordinates
   const currentDraftSnapshot = useMemo(
     () => JSON.stringify(createSaveFields(metadataDraft)),
@@ -359,8 +485,26 @@ export default function GeotagPage() {
       setDestructiveUnlockValue('')
       setSaveMessage('')
       setSaveError('')
+      setSelectedLandmarkIndex(null)
+      landmarkInteractionRef.current = null
     },
     [photoEntries],
+  )
+
+  const showPhotoById = useCallback(
+    (photoId) => {
+      const nextIndex = photoEntries.findIndex((entry) => entry.id === photoId)
+      if (nextIndex === -1) {
+        return false
+      }
+
+      if (nextIndex !== currentIndex) {
+        showPhotoAt(nextIndex)
+      }
+
+      return true
+    },
+    [currentIndex, photoEntries, showPhotoAt],
   )
 
   const applyUpdatedPhoto = (updatedPhoto) => {
@@ -377,6 +521,329 @@ export default function GeotagPage() {
     setSaveMessage('')
     setSaveError('')
   }
+
+  const patchAiDescription = useCallback((updater) => {
+    setMetadataDraft((current) => {
+      const parsed = parseAiDescriptionDraft(current.aiDescription)
+      if (parsed.error || !parsed.value) {
+        return current
+      }
+
+      const nextAiDescription = updater(cloneAiDescription(parsed.value))
+      if (!nextAiDescription) {
+        return current
+      }
+
+      return {
+        ...current,
+        aiDescription: stringifyAiDescriptionValue(nextAiDescription),
+      }
+    })
+    setSaveMessage('')
+    setSaveError('')
+  }, [])
+
+  const setAiDescriptionError = useCallback((message) => {
+    setSaveError(message)
+    setSaveMessage('')
+  }, [])
+
+  const updateLandmarkAnnotation = useCallback(
+    (index, updater) => {
+      patchAiDescription((aiDescription) => {
+        const annotations = Array.isArray(aiDescription.landmarkAnnotations)
+          ? aiDescription.landmarkAnnotations.map(cloneLandmarkAnnotation)
+          : []
+        const currentAnnotation = annotations[index]
+        if (!currentAnnotation) {
+          return aiDescription
+        }
+
+        const nextAnnotation = updater(currentAnnotation)
+        if (!nextAnnotation) {
+          return aiDescription
+        }
+
+        annotations[index] = nextAnnotation
+
+        return {
+          ...aiDescription,
+          landmarkAnnotations: annotations,
+        }
+      })
+    },
+    [patchAiDescription],
+  )
+
+  const setLandmarkField = useCallback(
+    (field, rawValue) => {
+      if (selectedLandmarkIndex == null || !selectedLandmark) {
+        return
+      }
+
+      if (field === 'label') {
+        updateLandmarkAnnotation(selectedLandmarkIndex, (annotation) => ({
+          ...annotation,
+          label: rawValue,
+        }))
+        return
+      }
+
+      const normalizedValue = percentToNormalizedCoordinate(rawValue)
+      if (normalizedValue == null) {
+        return
+      }
+
+      if (selectedLandmark.kind === 'point') {
+        if (field === 'x' || field === 'y') {
+          updateLandmarkAnnotation(selectedLandmarkIndex, (annotation) => ({
+            ...annotation,
+            [field]: normalizedValue,
+          }))
+        }
+        return
+      }
+
+      if (selectedLandmark.kind === 'box') {
+        if (field === 'x' || field === 'y' || field === 'width' || field === 'height') {
+          updateLandmarkAnnotation(selectedLandmarkIndex, (annotation) => {
+            if (field === 'x') {
+              const nextX = clampNormalizedCoordinate(
+                Math.min(normalizedValue, 1 - annotation.width),
+              )
+              return createSafeLandmarkBox(annotation, {
+                ...annotation,
+                x: nextX,
+              })
+            }
+
+            if (field === 'y') {
+              const nextY = clampNormalizedCoordinate(
+                Math.min(normalizedValue, 1 - annotation.height),
+              )
+              return createSafeLandmarkBox(annotation, {
+                ...annotation,
+                y: nextY,
+              })
+            }
+
+            if (field === 'width') {
+              const nextWidth = Math.min(
+                Math.max(normalizedValue, 0.02),
+                1 - annotation.x,
+              )
+              return createSafeLandmarkBox(annotation, {
+                ...annotation,
+                width: nextWidth,
+              })
+            }
+
+            const nextHeight = Math.min(
+              Math.max(normalizedValue, 0.02),
+              1 - annotation.y,
+            )
+            return createSafeLandmarkBox(annotation, {
+              ...annotation,
+              height: nextHeight,
+            })
+          })
+        }
+      }
+    },
+    [selectedLandmark, selectedLandmarkIndex, updateLandmarkAnnotation],
+  )
+
+  const addLandmarkAnnotation = useCallback(
+    (kind) => {
+      if (!canEditLandmarks || !aiDescriptionValue) {
+        setAiDescriptionError('Load valid AI JSON before adding landmarks.')
+        return
+      }
+
+      const annotations = Array.isArray(aiDescriptionValue.landmarkAnnotations)
+        ? aiDescriptionValue.landmarkAnnotations.map(cloneLandmarkAnnotation)
+        : []
+
+      if (annotations.length >= MAX_LANDMARK_ANNOTATIONS) {
+        setAiDescriptionError(
+          `Landmark annotations are limited to ${MAX_LANDMARK_ANNOTATIONS} items.`,
+        )
+        return
+      }
+
+      const nextAnnotation = createDefaultLandmarkAnnotation(kind, annotations.length)
+      const nextIndex = annotations.length
+      annotations.push(nextAnnotation)
+
+      patchAiDescription((aiDescription) => ({
+        ...aiDescription,
+        landmarkAnnotations: annotations,
+      }))
+      setSelectedLandmarkIndex(nextIndex)
+    },
+    [aiDescriptionValue, canEditLandmarks, patchAiDescription, setAiDescriptionError],
+  )
+
+  const deleteLandmarkAnnotation = useCallback(() => {
+    if (!canEditLandmarks || selectedLandmarkIndex == null || !aiDescriptionValue) {
+      return
+    }
+
+    const annotations = Array.isArray(aiDescriptionValue.landmarkAnnotations)
+      ? aiDescriptionValue.landmarkAnnotations.map(cloneLandmarkAnnotation)
+      : []
+    if (!annotations[selectedLandmarkIndex]) {
+      return
+    }
+
+    const nextAnnotations = annotations.filter((_, index) => index !== selectedLandmarkIndex)
+    patchAiDescription((aiDescription) => ({
+      ...aiDescription,
+      landmarkAnnotations: nextAnnotations,
+    }))
+
+    setSelectedLandmarkIndex(
+      nextAnnotations.length ? Math.min(selectedLandmarkIndex, nextAnnotations.length - 1) : null,
+    )
+  }, [aiDescriptionValue, canEditLandmarks, patchAiDescription, selectedLandmarkIndex])
+
+  const beginLandmarkInteraction = useCallback(
+    (event, index, mode) => {
+      if (aiDescriptionPreview.error) {
+        return
+      }
+
+      const annotation = landmarkAnnotations[index]
+      const stage = photoStageRef.current
+      if (!annotation || !stage) {
+        return
+      }
+
+      const rect = stage.getBoundingClientRect()
+      if (!rect.width || !rect.height) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      setSelectedLandmarkIndex(index)
+
+      const pointer = {
+        x: clamp((event.clientX - rect.left) / rect.width, 0, 1),
+        y: clamp((event.clientY - rect.top) / rect.height, 0, 1),
+      }
+
+      landmarkInteractionRef.current = {
+        index,
+        mode,
+        startAnnotation: cloneLandmarkAnnotation(annotation),
+        startPointer: pointer,
+        offsetX: pointer.x - annotation.x,
+        offsetY: pointer.y - annotation.y,
+      }
+
+      if (event.currentTarget instanceof HTMLElement) {
+        try {
+          event.currentTarget.setPointerCapture?.(event.pointerId)
+        } catch {
+          // Ignore pointer-capture failures.
+        }
+      }
+    },
+    [aiDescriptionPreview.error, landmarkAnnotations],
+  )
+
+  const endLandmarkInteraction = useCallback(() => {
+    landmarkInteractionRef.current = null
+  }, [])
+
+  const handleLandmarkPointerMove = useCallback(
+    (event) => {
+      const interaction = landmarkInteractionRef.current
+      const stage = photoStageRef.current
+      if (!interaction || !stage) {
+        return
+      }
+
+      const rect = stage.getBoundingClientRect()
+      if (!rect.width || !rect.height) {
+        return
+      }
+
+      const pointer = {
+        x: clamp((event.clientX - rect.left) / rect.width, 0, 1),
+        y: clamp((event.clientY - rect.top) / rect.height, 0, 1),
+      }
+
+      if (interaction.mode === 'resize' && interaction.startAnnotation.kind === 'box') {
+        const nextWidth = Math.min(
+          Math.max(pointer.x - interaction.startAnnotation.x, 0.02),
+          1 - interaction.startAnnotation.x,
+        )
+        const nextHeight = Math.min(
+          Math.max(pointer.y - interaction.startAnnotation.y, 0.02),
+          1 - interaction.startAnnotation.y,
+        )
+
+        updateLandmarkAnnotation(interaction.index, (annotation) =>
+          createSafeLandmarkBox(annotation, {
+            ...annotation,
+            x: interaction.startAnnotation.x,
+            y: interaction.startAnnotation.y,
+            width: nextWidth,
+            height: nextHeight,
+          }),
+        )
+        return
+      }
+
+      const nextX = clampNormalizedCoordinate(pointer.x - interaction.offsetX)
+      const nextY = clampNormalizedCoordinate(pointer.y - interaction.offsetY)
+
+      updateLandmarkAnnotation(interaction.index, (annotation) => {
+        if (annotation.kind === 'point') {
+          return {
+            ...annotation,
+            x: nextX,
+            y: nextY,
+          }
+        }
+
+        const maxX = 1 - interaction.startAnnotation.width
+        const maxY = 1 - interaction.startAnnotation.height
+        return createSafeLandmarkBox(annotation, {
+          ...annotation,
+          x: clamp(nextX, 0, maxX),
+          y: clamp(nextY, 0, maxY),
+          width: interaction.startAnnotation.width,
+          height: interaction.startAnnotation.height,
+        })
+      })
+    },
+    [updateLandmarkAnnotation],
+  )
+
+  const handleLandmarkPointerUp = useCallback(() => {
+    endLandmarkInteraction()
+  }, [endLandmarkInteraction])
+
+  useEffect(() => {
+    window.addEventListener('pointermove', handleLandmarkPointerMove)
+    window.addEventListener('pointerup', handleLandmarkPointerUp)
+    window.addEventListener('pointercancel', handleLandmarkPointerUp)
+
+    return () => {
+      window.removeEventListener('pointermove', handleLandmarkPointerMove)
+      window.removeEventListener('pointerup', handleLandmarkPointerUp)
+      window.removeEventListener('pointercancel', handleLandmarkPointerUp)
+    }
+  }, [handleLandmarkPointerMove, handleLandmarkPointerUp])
+
+  useEffect(() => {
+    if (selectedLandmarkIndex != null && !selectedLandmark) {
+      setSelectedLandmarkIndex(null)
+    }
+  }, [selectedLandmark, selectedLandmarkIndex])
 
   const handleGpsFieldChange = (field, value) => {
     handleDraftChange(field, value)
@@ -410,8 +877,38 @@ export default function GeotagPage() {
     }
   }
 
+  const fetchLocationCodes = async (latitude, longitude) => {
+    setIsFetchingLocationCodes(true)
+
+    try {
+      const response = await fetch(
+        `/api/location-codes?lat=${encodeURIComponent(latitude)}&lng=${encodeURIComponent(longitude)}`,
+      )
+      const responseBody = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        throw new Error(responseBody?.error ?? 'Unable to fetch location codes.')
+      }
+
+      setMetadataDraft((current) => ({
+        ...current,
+        locationCountryCode: responseBody?.locationCountryCode ?? '',
+        locationCountryName: responseBody?.locationCountryName ?? '',
+        locationCity: responseBody?.locationCity ?? '',
+        locationCityCode: responseBody?.locationCityCode ?? '',
+      }))
+      setSaveMessage('CC and City filled from the reverse geocoder.')
+      setSaveError('')
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Unable to fetch location codes.')
+      setSaveMessage('')
+    } finally {
+      setIsFetchingLocationCodes(false)
+    }
+  }
+
   const handleMapSelection = async (latlng) => {
-    if (isSaving || isFetchingAltitude) {
+    if (isSaving || isFetchingAltitude || isFetchingLocationCodes) {
       return
     }
 
@@ -422,6 +919,10 @@ export default function GeotagPage() {
       ...current,
       latitude,
       longitude,
+      locationCountryCode: '',
+      locationCountryName: '',
+      locationCity: '',
+      locationCityCode: '',
     }))
     lastAltitudeLookupKeyRef.current = `${currentPhoto.filename}:${latitude},${longitude}`
     setSaveMessage('')
@@ -462,6 +963,10 @@ export default function GeotagPage() {
       longitude: '',
       altitude: '',
       imageDirection: '',
+      locationCountryCode: '',
+      locationCountryName: '',
+      locationCity: '',
+      locationCityCode: '',
     }))
     lastAltitudeLookupKeyRef.current = ''
     lastManualGpsLookupVersionRef.current = 0
@@ -480,6 +985,19 @@ export default function GeotagPage() {
     }
 
     await fetchAltitude(previewResult.coordinates.latitude, previewResult.coordinates.longitude)
+  }
+
+  const handleFetchLocationCodes = async () => {
+    if (!previewResult.coordinates) {
+      setSaveError(previewResult.error ?? 'Enter latitude and longitude first.')
+      setSaveMessage('')
+      return
+    }
+
+    await fetchLocationCodes(
+      previewResult.coordinates.latitude,
+      previewResult.coordinates.longitude,
+    )
   }
 
   const handleSave = useCallback(
@@ -546,7 +1064,8 @@ export default function GeotagPage() {
       manualGpsLookupVersion === lastManualGpsLookupVersionRef.current ||
       !previewResult.coordinates ||
       isSaving ||
-      isFetchingAltitude
+      isFetchingAltitude ||
+      isFetchingLocationCodes
     ) {
       return undefined
     }
@@ -568,6 +1087,7 @@ export default function GeotagPage() {
   }, [
     currentPhoto.filename,
     isFetchingAltitude,
+    isFetchingLocationCodes,
     isSaving,
     manualGpsLookupVersion,
     metadataDraft.altitude,
@@ -609,6 +1129,30 @@ export default function GeotagPage() {
     currentPhotoFilenameRef.current = currentPhoto.filename
     setMetadataDraft(createMetadataDraft(currentPhoto))
   }, [currentPhoto])
+
+  useEffect(() => {
+    const syncHashToPhoto = () => {
+      const photoIdFromHash = getPhotoIdFromHash(window.location.hash)
+      if (!photoIdFromHash) {
+        return
+      }
+
+      showPhotoById(photoIdFromHash)
+    }
+
+    window.addEventListener('hashchange', syncHashToPhoto)
+
+    return () => {
+      window.removeEventListener('hashchange', syncHashToPhoto)
+    }
+  }, [showPhotoById])
+
+  useEffect(() => {
+    const nextHash = formatPhotoHash(currentPhoto.id)
+    if (window.location.hash !== nextHash) {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${nextHash}`)
+    }
+  }, [currentPhoto.id])
 
   useEffect(() => {
     const handleKeydown = (event) => {
@@ -714,6 +1258,9 @@ export default function GeotagPage() {
           <p>
             {metadataDraft.altitude.trim() || '—'} altitude
             {metadataDraft.imageDirection.trim() ? ` · ${metadataDraft.imageDirection.trim()}°` : ''}
+            {metadataDraft.locationCountryCode.trim() || metadataDraft.locationCityCode.trim()
+              ? ` · ${metadataDraft.locationCountryCode.trim() || '—'}/${metadataDraft.locationCityCode.trim() || '—'}`
+              : ''}
           </p>
         </article>
         <article className="geotag-summary-card geotag-summary-card-wide">
@@ -737,7 +1284,15 @@ export default function GeotagPage() {
       <section className="geotag-layout">
         <article className="geotag-panel geotag-photo-panel">
           <div className="geotag-photo-frame">
-            <div className="geotag-photo-stage">
+            <div
+              className="geotag-photo-stage"
+              onClick={(event) => {
+                if (event.target === event.currentTarget) {
+                  setSelectedLandmarkIndex(null)
+                }
+              }}
+              ref={photoStageRef}
+            >
               <img
                 alt=""
                 className="geotag-photo-image"
@@ -746,25 +1301,46 @@ export default function GeotagPage() {
               {landmarkAnnotations.length ? (
                 <div className="geotag-photo-overlay">
                   {landmarkAnnotations.map((annotation, index) => {
+                    const isSelected = index === selectedLandmarkIndex
+
                     if (annotation.kind === 'point') {
                       return (
-                        <div
-                          className="geotag-landmark geotag-landmark-point"
+                        <button
+                          aria-label={`Select landmark ${annotation.label}`}
+                          className={`geotag-landmark geotag-landmark-point${
+                            isSelected ? ' geotag-landmark-selected' : ''
+                          }`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setSelectedLandmarkIndex(index)
+                          }}
+                          onPointerDown={(event) => beginLandmarkInteraction(event, index, 'move')}
+                          type="button"
                           key={`${annotation.label}-${index}`}
                           style={{
                             left: `${annotation.x * 100}%`,
                             top: `${annotation.y * 100}%`,
                           }}
                         >
+                          <span className="geotag-landmark-hitarea" />
                           <span className="geotag-landmark-dot" />
                           <span className="geotag-landmark-label">{annotation.label}</span>
-                        </div>
+                        </button>
                       )
                     }
 
                     return (
-                      <div
-                        className="geotag-landmark geotag-landmark-box"
+                      <button
+                        aria-label={`Select landmark ${annotation.label}`}
+                        className={`geotag-landmark geotag-landmark-box${
+                          isSelected ? ' geotag-landmark-selected' : ''
+                        }`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setSelectedLandmarkIndex(index)
+                        }}
+                        onPointerDown={(event) => beginLandmarkInteraction(event, index, 'move')}
+                        type="button"
                         key={`${annotation.label}-${index}`}
                         style={{
                           left: `${annotation.x * 100}%`,
@@ -774,13 +1350,188 @@ export default function GeotagPage() {
                         }}
                       >
                         <span className="geotag-landmark-label">{annotation.label}</span>
-                      </div>
+                        {isSelected ? (
+                          <span
+                            aria-hidden="true"
+                            className="geotag-landmark-resize-handle"
+                            onPointerDown={(event) => {
+                              event.stopPropagation()
+                              beginLandmarkInteraction(event, index, 'resize')
+                            }}
+                          />
+                        ) : null}
+                      </button>
                     )
                   })}
                 </div>
               ) : null}
             </div>
           </div>
+
+          <section className="geotag-landmark-editor">
+            <div className="geotag-landmark-editor-header">
+              <div>
+                <p className="geotag-label">Landmarks</p>
+                <h2 className="geotag-landmark-editor-title">Rename and reshape overlays</h2>
+              </div>
+              <div className="geotag-landmark-editor-actions">
+                <span className="geotag-landmark-editor-count">
+                  {landmarkAnnotations.length} overlay{landmarkAnnotations.length === 1 ? '' : 's'}
+                </span>
+                <button
+                  className="geotag-button geotag-landmark-action"
+                  disabled={!canAddLandmarks}
+                  onClick={() => addLandmarkAnnotation('point')}
+                  type="button"
+                >
+                  Add point
+                </button>
+                <button
+                  className="geotag-button geotag-landmark-action"
+                  disabled={!canAddLandmarks}
+                  onClick={() => addLandmarkAnnotation('box')}
+                  type="button"
+                >
+                  Add box
+                </button>
+                <button
+                  className="geotag-button geotag-landmark-action"
+                  disabled={!canEditLandmarks || selectedLandmarkIndex == null}
+                  onClick={deleteLandmarkAnnotation}
+                  type="button"
+                >
+                  Delete selected
+                </button>
+              </div>
+            </div>
+
+            {landmarkAnnotations.length ? (
+              <div className="geotag-landmark-editor-body">
+                <div className="geotag-landmark-list" aria-label="Landmark annotations">
+                  {landmarkAnnotations.map((annotation, index) => {
+                    const isSelected = index === selectedLandmarkIndex
+                    return (
+                      <button
+                        className={`geotag-landmark-chip${
+                          isSelected ? ' geotag-landmark-chip-selected' : ''
+                        }`}
+                        key={`${annotation.label}-${index}-chip`}
+                        onClick={() => setSelectedLandmarkIndex(index)}
+                        type="button"
+                      >
+                        <span>{annotation.label}</span>
+                        <span>{annotation.kind}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {selectedLandmark ? (
+                  <div className="geotag-landmark-inspector">
+                    <div className="geotag-landmark-inspector-head">
+                      <div>
+                        <p className="geotag-label">Selected landmark</p>
+                        <strong>{selectedLandmark.kind}</strong>
+                      </div>
+                      <p className="geotag-landmark-confidence">
+                        Confidence {(selectedLandmark.confidence * 100).toFixed(1)}%
+                      </p>
+                    </div>
+
+                    <label className="geotag-field geotag-field-wide">
+                      <span className="geotag-label">Label</span>
+                      <input
+                        className="geotag-input"
+                        onChange={(event) =>
+                          setLandmarkField('label', event.target.value)
+                        }
+                        value={selectedLandmark.label}
+                      />
+                    </label>
+
+                    <div className="geotag-landmark-coordinates">
+                      <label className="geotag-field">
+                        <span className="geotag-label">X %</span>
+                        <input
+                          className="geotag-input"
+                          inputMode="decimal"
+                          min="0"
+                          max="100"
+                          onChange={(event) => setLandmarkField('x', event.target.value)}
+                          step="0.1"
+                          type="number"
+                          value={normalizedToPercentLabel(selectedLandmark.x)}
+                        />
+                      </label>
+
+                      <label className="geotag-field">
+                        <span className="geotag-label">Y %</span>
+                        <input
+                          className="geotag-input"
+                          inputMode="decimal"
+                          min="0"
+                          max="100"
+                          onChange={(event) => setLandmarkField('y', event.target.value)}
+                          step="0.1"
+                          type="number"
+                          value={normalizedToPercentLabel(selectedLandmark.y)}
+                        />
+                      </label>
+
+                      {selectedLandmark.kind === 'box' ? (
+                        <>
+                          <label className="geotag-field">
+                            <span className="geotag-label">Width %</span>
+                            <input
+                              className="geotag-input"
+                              inputMode="decimal"
+                              min="0"
+                              max="100"
+                              onChange={(event) =>
+                                setLandmarkField('width', event.target.value)
+                              }
+                              step="0.1"
+                              type="number"
+                              value={normalizedToPercentLabel(selectedLandmark.width ?? 0)}
+                            />
+                          </label>
+
+                          <label className="geotag-field">
+                            <span className="geotag-label">Height %</span>
+                            <input
+                              className="geotag-input"
+                              inputMode="decimal"
+                              min="0"
+                              max="100"
+                              onChange={(event) =>
+                                setLandmarkField('height', event.target.value)
+                              }
+                              step="0.1"
+                              type="number"
+                              value={normalizedToPercentLabel(selectedLandmark.height ?? 0)}
+                            />
+                          </label>
+                        </>
+                      ) : null}
+                    </div>
+
+                    <p className="geotag-landmark-tip">
+                      Drag the overlay on the photo. Box landmarks can be resized from the lower-right
+                      corner.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="geotag-status geotag-landmark-empty">
+                    Select a landmark on the photo to rename it and adjust its position.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="geotag-status geotag-landmark-empty">
+                This photo has no landmark overlays in its AI description.
+              </p>
+            )}
+          </section>
         </article>
 
         <section className="geotag-panel geotag-ai-panel">
@@ -911,6 +1662,18 @@ export default function GeotagPage() {
                 {metadataDraft.imageDirection.trim() || '—'}
               </p>
             </div>
+            <div>
+              <p className="geotag-label">CC</p>
+              <p className="geotag-value">
+                {metadataDraft.locationCountryCode.trim() || '—'}
+              </p>
+            </div>
+            <div>
+              <p className="geotag-label">City</p>
+              <p className="geotag-value">
+                {metadataDraft.locationCityCode.trim() || '—'}
+              </p>
+            </div>
           </div>
 
           {previewResult.error ? (
@@ -964,6 +1727,26 @@ export default function GeotagPage() {
             </label>
 
             <label className="geotag-field">
+              <span className="geotag-label">CC</span>
+              <input
+                className="geotag-input"
+                onChange={(event) => handleDraftChange('locationCountryCode', event.target.value)}
+                type="text"
+                value={metadataDraft.locationCountryCode}
+              />
+            </label>
+
+            <label className="geotag-field">
+              <span className="geotag-label">City</span>
+              <input
+                className="geotag-input"
+                onChange={(event) => handleDraftChange('locationCityCode', event.target.value)}
+                type="text"
+                value={metadataDraft.locationCityCode}
+              />
+            </label>
+
+            <label className="geotag-field">
               <span className="geotag-label">Altitude</span>
               <input
                 className="geotag-input"
@@ -988,7 +1771,15 @@ export default function GeotagPage() {
             <div className="geotag-gps-actions">
               <button
                 className="geotag-button"
-                disabled={isSaving || isFetchingAltitude}
+                disabled={isSaving || isFetchingAltitude || isFetchingLocationCodes}
+                onClick={handleFetchLocationCodes}
+                type="button"
+              >
+                {isFetchingLocationCodes ? 'Fetching CC / City…' : 'Fetch CC / City'}
+              </button>
+              <button
+                className="geotag-button"
+                disabled={isSaving || isFetchingAltitude || isFetchingLocationCodes}
                 onClick={handleFetchAltitude}
                 type="button"
               >
@@ -996,7 +1787,12 @@ export default function GeotagPage() {
               </button>
               <button
                 className="geotag-button"
-                disabled={isSaving || isFetchingAltitude || !isDestructiveUnlocked}
+                disabled={
+                  isSaving ||
+                  isFetchingAltitude ||
+                  isFetchingLocationCodes ||
+                  !isDestructiveUnlocked
+                }
                 onClick={clearGpsFields}
                 type="button"
               >
