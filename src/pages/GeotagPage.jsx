@@ -321,6 +321,13 @@ export default function GeotagPage() {
       : aiDescriptionValue
         ? 'ready'
         : 'idle'
+  const aiStatusLabel = aiDescriptionPreview.error
+    ? 'Invalid JSON'
+    : landmarkAnnotations.length
+      ? `${landmarkAnnotations.length} overlays`
+      : aiDescriptionValue
+        ? 'Loaded'
+        : 'Empty'
   const previewCoordinates = previewResult.coordinates ?? currentCoordinates
   const currentDraftSnapshot = useMemo(
     () => JSON.stringify(createSaveFields(metadataDraft)),
@@ -686,15 +693,49 @@ export default function GeotagPage() {
         </button>
       </section>
 
+      <section className="geotag-summary-grid" aria-label="Photo summary">
+        <article className="geotag-summary-card">
+          <span className="geotag-label">Capture</span>
+          <strong>{formatDate(currentPhoto.captureTimestamp)}</strong>
+          <p>{formatTime(currentPhoto.captureTimestamp)} UTC</p>
+        </article>
+        <article className="geotag-summary-card">
+          <span className="geotag-label">Camera</span>
+          <strong>{formatCamera(currentPhoto.camera)}</strong>
+          <p>{formatDimensions(currentPhoto.width, currentPhoto.height)}</p>
+        </article>
+        <article className="geotag-summary-card">
+          <span className="geotag-label">Location</span>
+          <strong>
+            {previewCoordinates
+              ? `${previewCoordinates.latitude}, ${previewCoordinates.longitude}`
+              : 'No coordinates'}
+          </strong>
+          <p>
+            {metadataDraft.altitude.trim() || '—'} altitude
+            {metadataDraft.imageDirection.trim() ? ` · ${metadataDraft.imageDirection.trim()}°` : ''}
+          </p>
+        </article>
+        <article className="geotag-summary-card geotag-summary-card-wide">
+          <span className="geotag-label">AI status</span>
+          <strong>{aiStatusLabel}</strong>
+          <p>{currentAiStatus}</p>
+        </article>
+        <article className="geotag-summary-card geotag-summary-action-card">
+          <span className="geotag-label">Save</span>
+          <button
+            className="geotag-button geotag-summary-save-button"
+            disabled={isSaving}
+            form="geotag-editor-form"
+            type="submit"
+          >
+            {isSaving ? 'Saving…' : 'Save now'}
+          </button>
+        </article>
+      </section>
+
       <section className="geotag-layout">
         <article className="geotag-panel geotag-photo-panel">
-          <div className="geotag-photo-meta">
-            <p>{formatDate(currentPhoto.captureTimestamp)}</p>
-            <p>{formatTime(currentPhoto.captureTimestamp)} UTC</p>
-            <p>{formatCamera(currentPhoto.camera)}</p>
-            <p>{formatDimensions(currentPhoto.width, currentPhoto.height)}</p>
-          </div>
-
           <div className="geotag-photo-frame">
             <div className="geotag-photo-stage">
               <img
@@ -740,130 +781,240 @@ export default function GeotagPage() {
               ) : null}
             </div>
           </div>
-          {aiDescriptionPreview.error ? (
-            <p className="geotag-status geotag-status-error">{aiDescriptionPreview.error}</p>
-          ) : landmarkAnnotations.length ? (
-            <p className="geotag-status">
-              Showing {landmarkAnnotations.length} landmark overlay
-              {landmarkAnnotations.length === 1 ? '' : 's'} from the AI description.
-            </p>
-          ) : null}
+        </article>
 
-          <section className="geotag-ai-panel">
-            <div className="geotag-ai-header">
-              <div>
-                <p className="geotag-kicker">AI analysis</p>
-                <h2 className="geotag-ai-title">Readable summary</h2>
-              </div>
-              <span className={`geotag-ai-badge geotag-ai-badge-${aiStatusTone}`}>
-                {aiDescriptionPreview.error
-                  ? 'Invalid JSON'
-                  : landmarkAnnotations.length
-                    ? `${landmarkAnnotations.length} overlays`
-                    : aiDescriptionValue
-                      ? 'Loaded'
-                      : 'Empty'}
-              </span>
+        <section className="geotag-panel geotag-ai-panel">
+          <div className="geotag-ai-header">
+            <div>
+              <p className="geotag-kicker">AI analysis</p>
+              <h2 className="geotag-ai-title">Readable summary</h2>
             </div>
+            <span className={`geotag-ai-badge geotag-ai-badge-${aiStatusTone}`}>
+              {aiStatusLabel}
+            </span>
+          </div>
 
-            <p className={`geotag-ai-status${aiDescriptionPreview.error ? ' geotag-ai-status-error' : ''}`}>
-              {currentAiStatus}
-            </p>
-            {aiDescriptionValue ? (
-              <div className="geotag-ai-content">
-                <div className="geotag-ai-grid">
-                  <div className="geotag-ai-stat">
-                    <span className="geotag-label">Time of day</span>
-                    <strong>{formatAiLabel(aiDescriptionValue.timeOfDay)}</strong>
-                  </div>
-                  <div className="geotag-ai-stat">
-                    <span className="geotag-label">Setting</span>
-                    <strong>{formatAiValue(aiDescriptionValue.setting)}</strong>
-                  </div>
-                  <div className="geotag-ai-stat">
-                    <span className="geotag-label">Mood</span>
-                    <strong>{formatAiValue(aiDescriptionValue.mood)}</strong>
-                  </div>
-                  <div className="geotag-ai-stat">
-                    <span className="geotag-label">Lighting</span>
-                    <strong>{formatAiValue(aiDescriptionValue.lighting)}</strong>
-                  </div>
-                  <div className="geotag-ai-stat">
-                    <span className="geotag-label">Composition</span>
-                    <strong>{formatAiValue(aiDescriptionValue.composition)}</strong>
-                  </div>
-                  <div className="geotag-ai-stat">
-                    <span className="geotag-label">Landmark</span>
-                    <strong>
-                      {aiDescriptionValue.landmark?.isFamousLandmark
-                        ? formatAiValue(aiDescriptionValue.landmark?.name) || 'Flagged'
-                        : 'None flagged'}
-                    </strong>
+          <p className={`geotag-ai-status${aiDescriptionPreview.error ? ' geotag-ai-status-error' : ''}`}>
+            {currentAiStatus}
+          </p>
+          {aiDescriptionValue ? (
+            <div className="geotag-ai-content">
+              <div className="geotag-ai-grid">
+                <div className="geotag-ai-stat">
+                  <span className="geotag-label">Time of day</span>
+                  <strong>{formatAiLabel(aiDescriptionValue.timeOfDay)}</strong>
+                </div>
+                <div className="geotag-ai-stat">
+                  <span className="geotag-label">Setting</span>
+                  <strong>{formatAiValue(aiDescriptionValue.setting)}</strong>
+                </div>
+                <div className="geotag-ai-stat">
+                  <span className="geotag-label">Mood</span>
+                  <strong>{formatAiValue(aiDescriptionValue.mood)}</strong>
+                </div>
+                <div className="geotag-ai-stat">
+                  <span className="geotag-label">Lighting</span>
+                  <strong>{formatAiValue(aiDescriptionValue.lighting)}</strong>
+                </div>
+                <div className="geotag-ai-stat">
+                  <span className="geotag-label">Composition</span>
+                  <strong>{formatAiValue(aiDescriptionValue.composition)}</strong>
+                </div>
+                <div className="geotag-ai-stat">
+                  <span className="geotag-label">Landmark</span>
+                  <strong>
+                    {aiDescriptionValue.landmark?.isFamousLandmark
+                      ? formatAiValue(aiDescriptionValue.landmark?.name) || 'Flagged'
+                      : 'None flagged'}
+                  </strong>
+                </div>
+              </div>
+
+              {aiDescriptionValue.description ? (
+                <div className="geotag-ai-copy">
+                  <p className="geotag-label">Description</p>
+                  <p>{aiDescriptionValue.description}</p>
+                </div>
+              ) : null}
+
+              {Array.isArray(aiDescriptionValue.subjects) && aiDescriptionValue.subjects.length ? (
+                <div className="geotag-ai-section">
+                  <p className="geotag-label">Subjects</p>
+                  <div className="geotag-ai-chip-row">
+                    {aiDescriptionValue.subjects.map((subject) => (
+                      <span className="geotag-ai-chip" key={subject}>
+                        {subject}
+                      </span>
+                    ))}
                   </div>
                 </div>
+              ) : null}
 
-                {aiDescriptionValue.description ? (
-                  <div className="geotag-ai-copy">
-                    <p className="geotag-label">Description</p>
-                    <p>{aiDescriptionValue.description}</p>
-                  </div>
-                ) : null}
+              {Array.isArray(aiDescriptionValue.notableDetails) &&
+              aiDescriptionValue.notableDetails.length ? (
+                <div className="geotag-ai-section">
+                  <p className="geotag-label">Notable details</p>
+                  <ul className="geotag-ai-list">
+                    {aiDescriptionValue.notableDetails.map((detail) => (
+                      <li key={detail}>{detail}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
 
-                {Array.isArray(aiDescriptionValue.subjects) && aiDescriptionValue.subjects.length ? (
-                  <div className="geotag-ai-section">
-                    <p className="geotag-label">Subjects</p>
-                    <div className="geotag-ai-chip-row">
-                      {aiDescriptionValue.subjects.map((subject) => (
-                        <span className="geotag-ai-chip" key={subject}>
-                          {subject}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {Array.isArray(aiDescriptionValue.notableDetails) &&
-                aiDescriptionValue.notableDetails.length ? (
-                  <div className="geotag-ai-section">
-                    <p className="geotag-label">Notable details</p>
-                    <ul className="geotag-ai-list">
-                      {aiDescriptionValue.notableDetails.map((detail) => (
-                        <li key={detail}>{detail}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-
-                {aiTagSections.length ? (
-                  <div className="geotag-ai-section">
-                    <p className="geotag-label">Tags</p>
-                    <div className="geotag-ai-tag-groups">
-                      {aiTagSections.map(([label, values]) => (
-                        <div className="geotag-ai-tag-group" key={label}>
-                          <p className="geotag-ai-tag-title">{label}</p>
-                          <div className="geotag-ai-chip-row">
-                            {values.map((value) => (
-                              <span className="geotag-ai-chip" key={`${label}-${value}`}>
-                                {formatAiValue(value)}
-                              </span>
-                            ))}
-                          </div>
+              {aiTagSections.length ? (
+                <div className="geotag-ai-section">
+                  <p className="geotag-label">Tags</p>
+                  <div className="geotag-ai-tag-groups">
+                    {aiTagSections.map(([label, values]) => (
+                      <div className="geotag-ai-tag-group" key={label}>
+                        <p className="geotag-ai-tag-title">{label}</p>
+                        <div className="geotag-ai-chip-row">
+                          {values.map((value) => (
+                            <span className="geotag-ai-chip" key={`${label}-${value}`}>
+                              {formatAiValue(value)}
+                            </span>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    ))}
                   </div>
-                ) : null}
-              </div>
-            ) : null}
-          </section>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
 
-          <form
-            className="geotag-editor-form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              void handleSave()
-            }}
-          >
+        <article className="geotag-panel geotag-map-panel">
+          <div className="geotag-coordinates">
+            <div>
+              <p className="geotag-label">Latitude</p>
+              <p className="geotag-value">
+                {previewCoordinates ? previewCoordinates.latitude : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="geotag-label">Longitude</p>
+              <p className="geotag-value">
+                {previewCoordinates ? previewCoordinates.longitude : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="geotag-label">Altitude</p>
+              <p className="geotag-value">
+                {metadataDraft.altitude.trim() || '—'}
+              </p>
+            </div>
+            <div>
+              <p className="geotag-label">Direction</p>
+              <p className="geotag-value">
+                {metadataDraft.imageDirection.trim() || '—'}
+              </p>
+            </div>
+          </div>
+
+          {previewResult.error ? (
+            <p className="geotag-status geotag-status-error">{previewResult.error}</p>
+          ) : null}
+
+          <div className="geotag-map-shell">
+            <MapContainer
+              center={center}
+              className="geotag-map"
+              ref={mapRef}
+              zoom={zoom}
+            >
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              <RecenterMap center={center} zoom={zoom} />
+              <MapClickHandler onSelect={handleMapSelection} />
+              {previewCoordinates ? (
+                <Marker
+                  position={[previewCoordinates.latitude, previewCoordinates.longitude]}
+                />
+              ) : null}
+            </MapContainer>
+          </div>
+
+          <div className="geotag-gps-form">
+            <label className="geotag-field">
+              <span className="geotag-label">Latitude</span>
+              <input
+                className="geotag-input"
+                inputMode="decimal"
+                onChange={(event) => handleGpsFieldChange('latitude', event.target.value)}
+                placeholder="52.367573"
+                type="text"
+                value={metadataDraft.latitude}
+              />
+            </label>
+
+            <label className="geotag-field">
+              <span className="geotag-label">Longitude</span>
+              <input
+                className="geotag-input"
+                inputMode="decimal"
+                onChange={(event) => handleGpsFieldChange('longitude', event.target.value)}
+                placeholder="4.904139"
+                type="text"
+                value={metadataDraft.longitude}
+              />
+            </label>
+
+            <label className="geotag-field">
+              <span className="geotag-label">Altitude</span>
+              <input
+                className="geotag-input"
+                inputMode="decimal"
+                onChange={(event) => handleDraftChange('altitude', event.target.value)}
+                type="text"
+                value={metadataDraft.altitude}
+              />
+            </label>
+
+            <label className="geotag-field">
+              <span className="geotag-label">Image direction</span>
+              <input
+                className="geotag-input"
+                inputMode="decimal"
+                onChange={(event) => handleDraftChange('imageDirection', event.target.value)}
+                type="text"
+                value={metadataDraft.imageDirection}
+              />
+            </label>
+
+            <div className="geotag-gps-actions">
+              <button
+                className="geotag-button"
+                disabled={isSaving || isFetchingAltitude}
+                onClick={handleFetchAltitude}
+                type="button"
+              >
+                {isFetchingAltitude ? 'Fetching altitude…' : 'Fetch altitude'}
+              </button>
+              <button
+                className="geotag-button"
+                disabled={isSaving || isFetchingAltitude || !isDestructiveUnlocked}
+                onClick={clearGpsFields}
+                type="button"
+              >
+                Clear GPS fields
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <form
+          id="geotag-editor-form"
+          className="geotag-panel geotag-editor-panel"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void handleSave()
+          }}
+        >
+          <div className="geotag-editor-grid">
             <label className="geotag-field geotag-field-wide">
               <span className="geotag-label">Capture timestamp</span>
               <input
@@ -1046,20 +1197,6 @@ export default function GeotagPage() {
               </div>
             </details>
 
-            <div className="geotag-form-actions">
-              <button className="geotag-button" disabled={isSaving} type="submit">
-                {isSaving ? 'Saving…' : 'Save now'}
-              </button>
-              <button
-                className="geotag-button"
-                disabled={isSaving || !isDestructiveUnlocked}
-                onClick={handleReset}
-                type="button"
-              >
-                Reset fields
-              </button>
-            </div>
-
             <div className="geotag-danger-zone geotag-field-wide">
               <p className="geotag-danger-title">Destructive actions locked</p>
               <p className="geotag-danger-copy">
@@ -1081,129 +1218,19 @@ export default function GeotagPage() {
                 {isSaving ? 'Saving changes…' : hasPendingChanges ? 'Unsaved changes queued…' : 'Auto-save is on.'}
               </p>
             ) : null}
-          </form>
-        </article>
-
-        <article className="geotag-panel geotag-map-panel">
-          <div className="geotag-coordinates">
-            <div>
-              <p className="geotag-label">Latitude</p>
-              <p className="geotag-value">
-                {previewCoordinates ? previewCoordinates.latitude : '—'}
-              </p>
-            </div>
-            <div>
-              <p className="geotag-label">Longitude</p>
-              <p className="geotag-value">
-                {previewCoordinates ? previewCoordinates.longitude : '—'}
-              </p>
-            </div>
-            <div>
-              <p className="geotag-label">Altitude</p>
-              <p className="geotag-value">
-                {metadataDraft.altitude.trim() || '—'}
-              </p>
-            </div>
-            <div>
-              <p className="geotag-label">Direction</p>
-              <p className="geotag-value">
-                {metadataDraft.imageDirection.trim() || '—'}
-              </p>
-            </div>
           </div>
 
-          {previewResult.error ? (
-            <p className="geotag-status geotag-status-error">{previewResult.error}</p>
-          ) : null}
-
-          <div className="geotag-map-shell">
-            <MapContainer
-              center={center}
-              className="geotag-map"
-              ref={mapRef}
-              zoom={zoom}
+          <div className="geotag-form-actions">
+            <button
+              className="geotag-button"
+              disabled={isSaving || !isDestructiveUnlocked}
+              onClick={handleReset}
+              type="button"
             >
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
-              <RecenterMap center={center} zoom={zoom} />
-              <MapClickHandler onSelect={handleMapSelection} />
-              {previewCoordinates ? (
-                <Marker
-                  position={[previewCoordinates.latitude, previewCoordinates.longitude]}
-                />
-              ) : null}
-            </MapContainer>
+              Reset fields
+            </button>
           </div>
-
-          <div className="geotag-gps-form">
-            <label className="geotag-field">
-              <span className="geotag-label">Latitude</span>
-              <input
-                className="geotag-input"
-                inputMode="decimal"
-                onChange={(event) => handleGpsFieldChange('latitude', event.target.value)}
-                placeholder="52.367573"
-                type="text"
-                value={metadataDraft.latitude}
-              />
-            </label>
-
-            <label className="geotag-field">
-              <span className="geotag-label">Longitude</span>
-              <input
-                className="geotag-input"
-                inputMode="decimal"
-                onChange={(event) => handleGpsFieldChange('longitude', event.target.value)}
-                placeholder="4.904139"
-                type="text"
-                value={metadataDraft.longitude}
-              />
-            </label>
-
-            <label className="geotag-field">
-              <span className="geotag-label">Altitude</span>
-              <input
-                className="geotag-input"
-                inputMode="decimal"
-                onChange={(event) => handleDraftChange('altitude', event.target.value)}
-                type="text"
-                value={metadataDraft.altitude}
-              />
-            </label>
-
-            <label className="geotag-field">
-              <span className="geotag-label">Image direction</span>
-              <input
-                className="geotag-input"
-                inputMode="decimal"
-                onChange={(event) => handleDraftChange('imageDirection', event.target.value)}
-                type="text"
-                value={metadataDraft.imageDirection}
-              />
-            </label>
-
-            <div className="geotag-gps-actions">
-              <button
-                className="geotag-button"
-                disabled={isSaving || isFetchingAltitude}
-                onClick={handleFetchAltitude}
-                type="button"
-              >
-                {isFetchingAltitude ? 'Fetching altitude…' : 'Fetch altitude'}
-              </button>
-              <button
-                className="geotag-button"
-                disabled={isSaving || isFetchingAltitude || !isDestructiveUnlocked}
-                onClick={clearGpsFields}
-                type="button"
-              >
-                Clear GPS fields
-              </button>
-            </div>
-          </div>
-        </article>
+        </form>
       </section>
     </main>
   )

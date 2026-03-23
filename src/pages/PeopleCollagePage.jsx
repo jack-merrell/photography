@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import photoIndex from '../data/photoIndex.json'
@@ -120,6 +120,18 @@ export default function PeopleCollagePage() {
   const [activeItemId, setActiveItemId] = useState(null)
   const activeItem = collageItems.find((item) => item.id === activeItemId) ?? null
 
+  const clearFocus = useCallback(() => {
+    const activeElement = document.activeElement
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur()
+    }
+  }, [])
+
+  const closeLightbox = useCallback(() => {
+    setActiveItemId(null)
+    window.requestAnimationFrame(clearFocus)
+  }, [clearFocus])
+
   useEffect(() => {
     if (!activeItem) {
       return undefined
@@ -130,7 +142,7 @@ export default function PeopleCollagePage() {
 
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
-        setActiveItemId(null)
+        closeLightbox()
       }
     }
 
@@ -140,7 +152,7 @@ export default function PeopleCollagePage() {
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [activeItem])
+  }, [activeItem, closeLightbox])
 
   return (
     <main className="people-collage-page">
@@ -205,7 +217,7 @@ export default function PeopleCollagePage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1, transition: LIGHTBOX_OPEN_TRANSITION }}
               exit={{ opacity: 0, transition: LIGHTBOX_CLOSE_TRANSITION }}
-              onClick={() => setActiveItemId(null)}
+              onClick={closeLightbox}
               type="button"
             />
 
@@ -249,7 +261,7 @@ export default function PeopleCollagePage() {
 
                   <MotionButton
                     className="people-collage-lightbox-close"
-                    onClick={() => setActiveItemId(null)}
+                    onClick={closeLightbox}
                     type="button"
                     whileHover={{ y: -1 }}
                     whileTap={{ scale: 0.98 }}

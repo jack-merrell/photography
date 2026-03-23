@@ -79,8 +79,13 @@
   text-align: left;
   font: inherit;
   cursor: pointer;
+  outline: none;
   appearance: none;
   -webkit-appearance: none;
+}
+
+.people-collage-tile-button:focus {
+  outline: none;
 }
 
 .people-collage-tile-button:focus-visible .people-collage-frame {
@@ -140,6 +145,7 @@
     radial-gradient(circle at center, rgba(255, 207, 92, 0.08), transparent 36%),
     rgba(0, 0, 0, 0.74);
   cursor: pointer;
+  outline: none;
 }
 
 .people-collage-lightbox {
@@ -207,6 +213,16 @@
   font-size: 0.62rem;
   padding: 7px 10px;
   cursor: pointer;
+  outline: none;
+}
+
+.people-collage-lightbox-close:focus {
+  outline: none;
+}
+
+.people-collage-lightbox-close:focus-visible {
+  outline: 2px solid rgba(255, 207, 92, 0.85);
+  outline-offset: 2px;
 }
 
 .people-collage-meta {
